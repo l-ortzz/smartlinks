@@ -1,0 +1,120 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id             String       @id @default(cuid())
+  name           String
+  email          String       @unique
+  slug           String       @unique
+  numeroWhatsApp String       @unique
+  subscription   Subscription?
+  products       Product[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([slug])
+  @@index([email])
+  @@map("users")
+}
+
+model Product {
+  id          String       @id @default(cuid())
+  userId      String
+  slug        String
+  name        String
+  description String?
+  price       Decimal
+  images      Json?        // Array of image URLs, e.g., ["url1", "url2"]
+  tags        ProductTag[]
+  clicks      Click[]
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([userId, slug])
+  @@index([userId])
+  @@index([slug])
+  @@map("products")
+}
+
+model Tag {
+  id        String       @id @default(cuid())
+  name      String       @unique
+  products  ProductTag[]
+  createdAt DateTime     @default(now())
+
+  @@index([name])
+  @@map("tags")
+}
+
+model ProductTag {
+  productId String
+  tagId     String
+  assignedAt DateTime   @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([productId, tagId])
+  @@map("product_tags")
+}
+
+model Click {
+  id        String   @id @default(cuid())
+  productId String
+  ip        String
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@index([ip])
+  @@index([createdAt])
+  @@map("clicks")
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  EXPIRED
+}
+
+model Plan {
+  id          String         @id @default(cuid())
+  name        String         @unique
+  price       Decimal
+  features    Json?          // e.g., {"maxProducts": 100, "maxClicks": 10000}
+  subscriptions Subscription[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@map("plans")
+}
+
+model Subscription {
+  id        String           @id @default(cuid())
+  userId    String           @unique
+  planId    String
+  status    SubscriptionStatus @default(ACTIVE)
+  startsAt  DateTime         @default(now())
+  endsAt    DateTime?
+
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan Plan  @relation(fields: [planId], references: [id])
+
+  @@index([planId])
+  @@index([status])
+  @@map("subscriptions")
+}
