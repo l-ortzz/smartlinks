@@ -13,15 +13,25 @@ datasource db {
 }
 
 model User {
-  id             String       @id @default(cuid())
+  id             String         @id @default(cuid())
   name           String
-  email          String       @unique
-  slug           String       @unique
-  numeroWhatsApp String       @unique
+  email          String         @unique
+  slug           String         @unique
+  numeroWhatsApp String         @unique
+  passwordHash   String?
+  description    String?
+  logo           String?
+  instagram      String?
+  telefone       String?
+  endereco       String?
   subscription   Subscription?
   products       Product[]
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  services       Service[]
+  orders         Order[]
+  availability   Availability[]
+  appointments   Appointment[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 
   @@index([slug])
   @@index([email])
@@ -29,22 +39,30 @@ model User {
 }
 
 model Product {
-  id          String       @id @default(cuid())
-  userId      String
-  slug        String
-  name        String
-  description String?
-  price       Decimal
-  images      Json?        // Array of image URLs, e.g., ["url1", "url2"]
-  tags        ProductTag[]
-  clicks      Click[]
-  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  id           String             @id @default(cuid())
+  userId       String
+  slug         String
+  name         String
+  description  String?
+  price        Decimal
+  images       Json? // Array of image URLs, e.g., ["url1", "url2"]
+  stock        Int?
+  active       Boolean            @default(true)
+  tags         ProductTag[]
+  attributes   ProductAttribute[]
+  relatedFrom  RelatedProduct[]   @relation("RelatedFrom")
+  relatedTo    RelatedProduct[]   @relation("RelatedTo")
+  clicks       Click[]
+  orderItems   OrderItem[]
+  reservations Reservation[]
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
 
   @@unique([userId, slug])
   @@index([userId])
   @@index([slug])
+  @@index([active])
   @@map("products")
 }
 
@@ -59,15 +77,54 @@ model Tag {
 }
 
 model ProductTag {
-  productId String
-  tagId     String
-  assignedAt DateTime   @default(now())
+  productId  String
+  tagId      String
+  assignedAt DateTime @default(now())
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
   tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@id([productId, tagId])
   @@map("product_tags")
+}
+
+model ProductAttribute {
+  id        String                  @id @default(cuid())
+  productId String
+  name      String
+  values    ProductAttributeValue[]
+  product   Product                 @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+
+  @@unique([productId, name])
+  @@index([productId])
+  @@map("product_attributes")
+}
+
+model ProductAttributeValue {
+  id          String           @id @default(cuid())
+  attributeId String
+  value       String
+  stock       Int?
+  attribute   ProductAttribute @relation(fields: [attributeId], references: [id], onDelete: Cascade)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([attributeId, value])
+  @@index([attributeId])
+  @@map("product_attribute_values")
+}
+
+model RelatedProduct {
+  productId String
+  relatedId String
+
+  product Product @relation("RelatedFrom", fields: [productId], references: [id], onDelete: Cascade)
+  related Product @relation("RelatedTo", fields: [relatedId], references: [id], onDelete: Cascade)
+
+  @@id([productId, relatedId])
+  @@map("related_products")
 }
 
 model Click {
@@ -85,6 +142,143 @@ model Click {
   @@map("clicks")
 }
 
+enum OrderStatus {
+  PENDING
+  PAID
+  DELIVERED
+  CANCELED
+}
+
+model Order {
+  id            String      @id @default(cuid())
+  userId        String
+  customerName  String?
+  customerPhone String?
+  address       String?
+  total         Decimal
+  status        OrderStatus @default(PENDING)
+  items         OrderItem[]
+  user          User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([userId])
+  @@index([status])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String  @id @default(cuid())
+  orderId   String
+  productId String
+  quantity  Int     @default(1)
+  price     Decimal
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@index([productId])
+  @@map("order_items")
+}
+
+enum ReservationStatus {
+  RESERVED
+  CONFIRMED
+  CANCELED
+  EXPIRED
+}
+
+model Reservation {
+  id            String            @id @default(cuid())
+  productId     String
+  customerName  String
+  customerPhone String
+  quantity      Int               @default(1)
+  status        ReservationStatus @default(RESERVED)
+  expiresAt     DateTime?
+  product       Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([productId])
+  @@index([status])
+  @@map("reservations")
+}
+
+model Service {
+  id           String        @id @default(cuid())
+  userId       String
+  name         String
+  description  String?
+  duration     Int
+  price        Decimal
+  active       Boolean       @default(true)
+  appointments Appointment[]
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@unique([userId, name])
+  @@index([userId])
+  @@index([active])
+  @@map("services")
+}
+
+enum Weekday {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+model Availability {
+  id        String   @id @default(cuid())
+  userId    String
+  weekday   Weekday
+  startTime String
+  endTime   String
+  active    Boolean  @default(true)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, weekday, startTime, endTime])
+  @@index([userId])
+  @@index([weekday])
+  @@index([active])
+  @@map("availabilities")
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  COMPLETED
+  CANCELED
+}
+
+model Appointment {
+  id            String            @id @default(cuid())
+  userId        String
+  serviceId     String
+  customerName  String
+  customerPhone String
+  date          DateTime
+  status        AppointmentStatus @default(SCHEDULED)
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  service       Service           @relation(fields: [serviceId], references: [id])
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  @@index([userId])
+  @@index([serviceId])
+  @@index([date])
+  @@index([status])
+  @@map("appointments")
+}
+
 enum SubscriptionStatus {
   ACTIVE
   CANCELED
@@ -92,27 +286,27 @@ enum SubscriptionStatus {
 }
 
 model Plan {
-  id          String         @id @default(cuid())
-  name        String         @unique
-  price       Decimal
-  features    Json?          // e.g., {"maxProducts": 100, "maxClicks": 10000}
+  id            String         @id @default(cuid())
+  name          String         @unique
+  price         Decimal
+  features      Json? // e.g., {"maxProducts": 100, "maxClicks": 10000}
   subscriptions Subscription[]
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
   @@map("plans")
 }
 
 model Subscription {
-  id        String           @id @default(cuid())
-  userId    String           @unique
-  planId    String
-  status    SubscriptionStatus @default(ACTIVE)
-  startsAt  DateTime         @default(now())
-  endsAt    DateTime?
+  id       String             @id @default(cuid())
+  userId   String             @unique
+  planId   String
+  status   SubscriptionStatus @default(ACTIVE)
+  startsAt DateTime           @default(now())
+  endsAt   DateTime?
 
-  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  plan Plan  @relation(fields: [planId], references: [id])
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan Plan @relation(fields: [planId], references: [id])
 
   @@index([planId])
   @@index([status])

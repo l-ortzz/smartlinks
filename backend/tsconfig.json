@@ -1,7 +1,8 @@
 {
   "compilerOptions": {
     "module": "nodenext",
-    "moduleResolution": "bundler",
+    "moduleResolution": "nodenext",
+    "allowImportingTsExtensions": true,
     "target": "es2023",
     "strict": true,
     "esModuleInterop": true,
