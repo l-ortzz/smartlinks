@@ -1,87 +1,116 @@
 # 🚀 Smart Links
 
-Smart Links é uma plataforma SaaS desenvolvida para ajudar pequenos negócios a vender e agendar serviços através de links inteligentes compartilhados em Instagram, WhatsApp e redes sociais.
+Smart Links é uma plataforma SaaS que ajuda pequenos negócios a vender produtos e receber agendamentos através de páginas inteligentes compartilhadas em Instagram, WhatsApp e redes sociais.
 
-O projeto está dividido em dois módulos principais:
+O objetivo é transformar links comuns em canais de conversão.
 
-## 🛍️ Smart Pages
+---
+
+# 🎯 Solução
+
+Pequenos negócios utilizam redes sociais para atrair clientes, mas normalmente dependem de conversas manuais para vender produtos ou agendar serviços.
+
+O Smart Links centraliza esse processo através de páginas compartilháveis que conectam descoberta, interesse e conversão em um único fluxo.
+
+---
+
+# 🛍️ Smart Pages
 
 Transforma produtos em páginas de conversão.
 
 Fluxo:
 
-Instagram Story/Post
-↓
-Link Smart Links
-↓
-Página do Produto
-↓
-Reserva ou Compra
-↓
-WhatsApp da Loja
+Instagram / WhatsApp
 
-Funcionalidades:
+↓
+
+Link Smart Links
+
+↓
+
+Página do Produto
+
+↓
+
+Reserva
+
+↓
+
+WhatsApp da Empresa
+
+### Funcionalidades
 
 * Cadastro de produtos
 * Múltiplas imagens
-* Atributos personalizados (cor, tamanho, numeração, etc.)
-* Produtos relacionados
+* Atributos personalizados
 * Página pública do produto
 * Reserva via WhatsApp
-* Analytics de cliques (estrutura pronta)
+* Produtos relacionados (em desenvolvimento)
+* Analytics (em desenvolvimento)
 
 ---
 
-## 📅 Smart Agenda
+# 📅 Smart Agenda
 
 Transforma serviços em páginas de agendamento.
 
 Fluxo:
 
-Instagram Story/Post
+Instagram / WhatsApp
+
 ↓
+
 Link Smart Links
+
 ↓
+
 Página de Agendamento
+
 ↓
-Escolha de horário
+
+Escolha de Horário
+
 ↓
+
 Confirmação via WhatsApp
 
-Funcionalidades previstas:
+### Funcionalidades Planejadas
 
 * Cadastro de serviços
-* Agenda semanal
 * Disponibilidade por horário
+* Agenda semanal
 * Agendamento online
-* Integração com WhatsApp
+* Confirmação via WhatsApp
 
 ---
 
-# 🎯 Objetivo do MVP
+# 📌 Status Atual
 
-Validar o mercado com dois produtos:
+MVP funcional em desenvolvimento.
 
-### Smart Pages
+### Concluído
 
-Voltado para:
+✅ Cadastro de empresas
 
-* Lojas de roupas
-* Calçados
-* Óticas
-* Bolsas
-* Acessórios
+✅ Login
 
-### Smart Agenda
+✅ Dashboard inicial
 
-Voltado para:
+✅ Cadastro de produtos
 
-* Manicures
-* Esteticistas
-* Clínicas
-* Odontologia
-* Barbearias
-* Salões
+✅ Página pública da empresa
+
+✅ Página pública do produto
+
+✅ Reserva via WhatsApp
+
+✅ Edição do perfil da empresa
+
+### Próxima Sprint
+
+* Produtos relacionados
+* Analytics básicos
+* Melhorias de UX
 
 ---
 
@@ -105,163 +134,62 @@ Voltado para:
 
 * Docker
 * Docker Compose
-* PostgreSQL
 
 ---
 
-# 📂 Estrutura do Projeto
+# ⚙️ Como Rodar Localmente
 
-```txt
-smartlinks/
+## Backend
 
-├── backend/
-│   ├── prisma/
-│   ├── src/
-│   │   ├── controllers/
-│   │   ├── services/
-│   │   ├── repositories/
-│   │   ├── routes/
-│   │   ├── schemas/
-│   │   ├── middlewares/
-│   │   ├── utils/
-│   │   ├── types/
-│   │   └── server.ts
-│
-└── frontend/
-    ├── src/
-    ├── public/
-    └── vite.config.ts
+```bash
+cd backend
+npm install
+npm run dev
+```
+
+## Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+## Banco de Dados
+
+```bash
+docker compose up -d
 ```
 
 ---
 
-# 🗄️ Modelagem Principal
+# 🗺️ Roadmap
 
-## Empresa
+## Sprint 2
 
-User
-
-Representa uma empresa cliente da plataforma.
-
-Campos principais:
-
-* nome
-* email
-* slug
-* logo
-* instagram
-* telefone
-* endereço
-* descrição
-
----
-
-## Smart Pages
-
-* Product
-* ProductAttribute
-* ProductAttributeValue
-* RelatedProduct
-* Reservation
-* Order
-* OrderItem
-
----
-
-## Smart Agenda
-
-* Service
-* Appointment
-* Availability
-
----
-
-## Plataforma
-
-* Plan
-* Subscription
-* Click
-* Tag
-* ProductTag
-
----
-
-# ✅ Funcionalidades Implementadas
-
-## Backend
-
-* Estrutura Fastify
-* Prisma ORM
-* PostgreSQL
-* Docker
-* Migrations
-* CRUD inicial de produtos
-* CRUD inicial de serviços
-* CRUD inicial de reservas
-* CRUD inicial de agendamentos
-* Company API
-* Helper WhatsApp
-
-## Frontend
-
-* Cadastro de conta
-* Login
-* Dashboard inicial
-* Cadastro de produtos
-* Página pública do produto
-* Seleção dinâmica de atributos
-* Reserva via WhatsApp
-
----
-
-# 📸 Status Atual
-
-Atualmente é possível:
-
-✅ Criar conta
-
-✅ Fazer login
-
-✅ Entrar no dashboard
-
-✅ Cadastrar produtos
-
-✅ Visualizar produtos
-
-✅ Abrir página pública do produto
-
-✅ Reservar produto via WhatsApp
-
----
-
-# 🚧 Próxima Sprint
-
-## Smart Pages
-
-* Página pública da empresa
-* Botão "Copiar Link"
 * Produtos relacionados
+* Analytics básicos
 * Melhorias de UX
-* Analytics
+* Melhorias visuais da empresa
 
-## Smart Agenda
+## Sprint 3
 
-* Cadastro de serviços
-* Agenda semanal
+* Smart Agenda completo
 * Disponibilidade
-* Agendamento completo
+* Agendamento online
+* Confirmação via WhatsApp
 
----
+## Sprint 4
 
-# 🔮 Roadmap Futuro
+* Integração de pagamentos
+* Assinaturas
+* Checkout online
 
-* Integração Asaas
-* Checkout Online
-* Split de Pagamento
+## Futuro
+
 * Dashboard Analytics
-* Gestão de Pedidos
-* Multiunidades
 * CRM
+* Multiunidades
 * Aplicativo Mobile
 
 ---
@@ -271,18 +199,25 @@ Atualmente é possível:
 Permitir que qualquer pequeno negócio consiga:
 
 Cadastrar Produto ou Serviço
-↓
-Gerar Link
-↓
-Compartilhar no Instagram
-↓
-Receber Reservas, Compras ou Agendamentos
 
-Tudo sem depender de marketplaces ou sistemas complexos.
+↓
+
+Gerar Link
+
+↓
+
+Compartilhar nas redes sociais
+
+↓
+
+Receber reservas, compras ou agendamentos
+
+Tudo de forma simples, rápida e acessível.
 
 ---
 
-Desenvolvido por:
+Desenvolvido por
 
 Lucas Ortiz & Bruno
+
 Smart Links ©
