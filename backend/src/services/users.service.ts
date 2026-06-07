@@ -1,4 +1,9 @@
-import { findCompanyPageBySlug } from "../repositories/users.repository.ts";
+import {
+  findCompanyPageBySlug,
+  findProfileByUserId,
+  findUserById,
+  updateUserById,
+} from "../repositories/users.repository.ts";
 
 export async function getCompanyPageService(slug: string) {
   const company = await findCompanyPageBySlug(slug);
@@ -8,4 +13,35 @@ export async function getCompanyPageService(slug: string) {
   }
 
   return company;
+}
+
+export async function updateUserProfileService(
+  userId: string,
+  input: {
+    name?: string;
+    description?: string;
+    logo?: string;
+    instagram?: string;
+    telefone?: string;
+    numeroWhatsApp?: string;
+    endereco?: string;
+  },
+) {
+  const user = await findUserById(userId);
+
+  if (!user) {
+    throw new Error("User not found.");
+  }
+
+  return updateUserById(userId, input);
+}
+
+export async function getMyProfileService(userId: string) {
+  const user = await findProfileByUserId(userId);
+
+  if (!user) {
+    throw new Error("User not found.");
+  }
+
+  return user;
 }

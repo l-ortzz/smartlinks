@@ -3,6 +3,9 @@ import { computed, onMounted, ref } from "vue";
 import { api, clearToken, getToken, setToken, type CompanyPage, type Product, type PublicProduct, type SessionUser } from "./api";
 import { formatCurrency, slugify } from "./format";
 
+console.log("API OBJ", api);
+console.log("UPDATE", api.updateProfile);
+
 type View = "dashboard" | "company" | "product";
 
 const route = ref(window.location.hash || "#/dashboard");
@@ -14,6 +17,7 @@ const loading = ref(false);
 const error = ref("");
 const notice = ref("");
 const authMode = ref<"login" | "register">("login");
+const dashboardTab = ref<"products" | "company">("products");
 
 const authForm = ref({
   name: "",
@@ -38,6 +42,16 @@ const reservationForm = ref({
   customerName: "",
   customerPhone: "",
   quantity: 1,
+});
+
+const companyForm = ref({
+  name: "",
+  description: "",
+  logo: "",
+  instagram: "",
+  telefone: "",
+  numeroWhatsApp: "",
+  endereco: "",
 });
 
 window.addEventListener("hashchange", () => {
@@ -73,6 +87,19 @@ async function loadSession() {
 
   try {
     user.value = await api.me();
+
+    const profile = await api.getMyProfile();
+
+    companyForm.value = {
+      name: profile.name ?? "",
+      description: profile.description ?? "",
+      logo: profile.logo ?? "",
+      instagram: profile.instagram ?? "",
+      telefone: profile.telefone ?? "",
+      numeroWhatsApp: profile.numeroWhatsApp ?? "",
+      endereco: profile.endereco ?? "",
+    };
+
     await loadProducts();
   } catch {
     clearToken();
@@ -114,6 +141,32 @@ async function submitAuth() {
 async function loadProducts() {
   if (!user.value) return;
   products.value = await api.listProducts();
+}
+
+async function saveCompany() {
+  loading.value = true;
+
+  try {
+    await api.updateProfile({
+      name: companyForm.value.name,
+      description: companyForm.value.description,
+      logo: companyForm.value.logo,
+      instagram: companyForm.value.instagram,
+      telefone: companyForm.value.telefone,
+      numeroWhatsApp: companyForm.value.numeroWhatsApp,
+      endereco: companyForm.value.endereco,
+    });
+
+    showNotice("Empresa atualizada.");
+  } catch (err) {
+    showError(
+      err instanceof Error
+        ? err.message
+        : "Nao foi possivel atualizar a empresa.",
+    );
+  } finally {
+    loading.value = false;
+  }
 }
 
 function parseValues(value: string) {
@@ -203,6 +256,17 @@ function logout() {
   user.value = null;
   products.value = [];
 }
+async function copyProductLink(productSlug: string) {
+  try {
+    const url = `${window.location.origin}/#/produto/${productSlug}`;
+
+    await navigator.clipboard.writeText(url);
+
+    showNotice("Link copiado.");
+  } catch {
+    showError("Nao foi possivel copiar o link.");
+  }
+}
 
 onMounted(async () => {
   await loadSession();
@@ -263,6 +327,23 @@ onMounted(async () => {
 
       <section class="main-panel">
         <div class="panel-heading">
+          <div class="segmented">
+            <button
+              type="button"
+              :class="{ active: dashboardTab === 'products' }"
+              @click="dashboardTab = 'products'"
+            >
+              Produtos
+            </button>
+
+            <button
+              type="button"
+              :class="{ active: dashboardTab === 'company' }"
+              @click="dashboardTab = 'company'"
+            >
+              Minha Empresa
+            </button>
+          </div>
           <div>
             <p class="eyebrow">Smart Pages</p>
             <h2>Produtos</h2>
@@ -270,8 +351,11 @@ onMounted(async () => {
           <span class="counter">{{ products.length }} itens</span>
         </div>
 
-        <form v-if="user" class="product-form" @submit.prevent="createProduct">
-          <input v-model="productForm.name" required placeholder="Nome do produto" />
+<form
+  v-if="user && dashboardTab === 'products'"
+  class="product-form"
+  @submit.prevent="createProduct"
+>          <input v-model="productForm.name" required placeholder="Nome do produto" />
           <input v-model="productForm.slug" placeholder="slug-do-produto" />
           <input v-model.number="productForm.price" required type="number" min="0" step="0.01" placeholder="Preco" />
           <input v-model="productForm.image" placeholder="URL da imagem" />
@@ -281,15 +365,90 @@ onMounted(async () => {
           <button class="primary-button" type="submit" :disabled="loading">Criar produto</button>
         </form>
 
-        <div class="product-list">
+          <div
+            v-if="dashboardTab === 'products'"
+            class="product-list"
+          >
           <article v-for="product in products" :key="product.id" class="product-card">
             <img :src="product.images?.[0] || 'https://images.unsplash.com/photo-1525507119028-ed4c629a60a3?auto=format&fit=crop&w=900&q=80'" alt="" />
             <div>
-              <h3>{{ product.name }}</h3>
-              <p>{{ formatCurrency(product.price) }}</p>
-              <a :href="`#/produto/${product.slug}`">Ver pagina</a>
-            </div>
+                <h3>{{ product.name }}</h3>
+
+                <p>{{ formatCurrency(product.price) }}</p>
+
+                <div class="product-actions">
+                  <a :href="`#/produto/${product.slug}`">
+                    Ver pagina
+                  </a>
+
+                  <button
+                    type="button"
+                    class="ghost-button"
+                    @click="copyProductLink(product.slug)"
+                  >
+                    Copiar link
+                  </button>
+                </div>
+              </div>
           </article>
+        </div>
+        <div
+          v-if="dashboardTab === 'company'"
+          class="company-settings"
+        >
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Smart Links</p>
+              <h2>Minha Empresa</h2>
+            </div>
+          </div>
+
+          <div class="product-form">
+           <form class="product-form" @submit.prevent="saveCompany">
+              <input
+                v-model="companyForm.name"
+                placeholder="Nome da empresa"
+              />
+
+              <textarea
+                v-model="companyForm.description"
+                placeholder="Descrição"
+              />
+
+              <input
+                v-model="companyForm.instagram"
+                placeholder="Instagram"
+              />
+
+              <input
+                v-model="companyForm.telefone"
+                placeholder="Telefone"
+              />
+
+              <input
+                v-model="companyForm.numeroWhatsApp"
+                placeholder="WhatsApp"
+              />
+
+              <input
+                v-model="companyForm.logo"
+                placeholder="URL da Logo"
+              />
+
+              <input
+                v-model="companyForm.endereco"
+                placeholder="Endereço"
+              />
+
+              <button
+                class="primary-button"
+                type="submit"
+                :disabled="loading"
+              >
+                Salvar Alterações
+              </button>
+            </form>
+          </div>
         </div>
       </section>
     </section>

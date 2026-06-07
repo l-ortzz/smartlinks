@@ -34,6 +34,26 @@ export async function insertUser(input: RegisterInput & { passwordHash: string }
   });
 }
 
+export async function updateUserById(
+  id: string,
+  data: {
+    name?: string;
+    description?: string;
+    logo?: string;
+    instagram?: string;
+    telefone?: string;
+    numeroWhatsApp?: string;
+    endereco?: string;
+  },
+) {
+  return prisma.user.update({
+    where: {
+      id,
+    },
+    data,
+  });
+}
+
 export async function findCompanyPageBySlug(slug: string) {
   return prisma.user.findUnique({
     where: {
@@ -68,6 +88,25 @@ export async function findCompanyPageBySlug(slug: string) {
           createdAt: true,
         },
       },
+    },
+  });
+}
+export async function findProfileByUserId(id: string) {
+  return prisma.user.findUnique({
+    where: {
+      id,
+    },
+    select: {
+      id: true,
+      name: true,
+      slug: true,
+      description: true,
+      logo: true,
+      instagram: true,
+      numeroWhatsApp: true,
+      telefone: true,
+      endereco: true,
+      email: true,
     },
   });
 }
