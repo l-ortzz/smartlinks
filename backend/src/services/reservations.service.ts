@@ -10,12 +10,16 @@ export async function createReservationService(input: CreateReservationInput) {
   const reservation = await insertReservation(input);
   const storePhone = reservation.product.user.numeroWhatsApp;
   const message = [
-    `Reserva #${reservation.id}`,
-    `Cliente: ${reservation.customerName}`,
-    `Telefone: ${reservation.customerPhone}`,
-    `Produto: ${reservation.product.name}`,
-    `Quantidade: ${reservation.quantity}`,
-  ].join("\n");
+  " SMART LINKS - NOVA RESERVA",
+  "",
+  `Produto: ${reservation.product.name}`,
+  `Quantidade: ${reservation.quantity}`,
+  "",
+  `Cliente: ${reservation.customerName}`,
+  `WhatsApp: ${reservation.customerPhone}`,
+  "",
+  "Enviado via Smart Links",
+].join("\n");
 
   return {
     reservation,

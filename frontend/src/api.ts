@@ -49,6 +49,16 @@ export type CompanyPage = {
   products: Product[];
 };
 
+export type UpdateCompanyInput = {
+  name?: string;
+  description?: string;
+  logo?: string;
+  instagram?: string;
+  telefone?: string;
+  numeroWhatsApp?: string;
+  endereco?: string;
+};
+
 export type PublicProduct = Product & {
   user: Omit<CompanyPage, "products">;
   relatedFrom?: Array<{
@@ -138,6 +148,17 @@ export const api = {
   me() {
     return request<SessionUser>("/auth/me");
   },
+  
+  getMyProfile() {
+  return request<CompanyProfile>("/users/me");
+},
+
+  updateProfile(input: UpdateCompanyInput) {
+  return request("/users/me", {
+    method: "PUT",
+    body: JSON.stringify(input),
+  });
+},
 
   listProducts() {
     return request<Product[]>("/products");
@@ -167,4 +188,17 @@ export const api = {
       },
     );
   },
+};
+
+export type CompanyProfile = {
+  id: string;
+  name: string;
+  email: string;
+  slug: string;
+  description?: string | null;
+  logo?: string | null;
+  instagram?: string | null;
+  numeroWhatsApp?: string | null;
+  telefone?: string | null;
+  endereco?: string | null;
 };
