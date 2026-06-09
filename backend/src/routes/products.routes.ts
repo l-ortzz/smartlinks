@@ -1,7 +1,16 @@
 import type { FastifyInstance } from "fastify";
-import { createProduct, listProducts } from "../controllers/products.controller.ts";
+import {
+  createProduct,
+  listProducts,
+  updateRelatedProducts,
+} from "../controllers/products.controller.ts";
+
 import { requireAuth } from "../middlewares/auth.middleware.ts";
-import { createProductSchema, listProductsSchema } from "../schemas/products.schema.ts";
+import {
+  createProductSchema,
+  listProductsSchema,
+} from "../schemas/products.schema.ts";
+
 import type { CreateProductInput } from "../types/products.ts";
 
 export async function productRoutes(app: FastifyInstance) {
@@ -14,5 +23,13 @@ export async function productRoutes(app: FastifyInstance) {
     "/",
     { preHandler: requireAuth, schema: createProductSchema },
     createProduct,
+  );
+    app.put<{
+    Params: { id: string };
+    Body: { relatedIds: string[] };
+  }>(
+    "/:id/related",
+    { preHandler: requireAuth },
+    updateRelatedProducts,
   );
 }

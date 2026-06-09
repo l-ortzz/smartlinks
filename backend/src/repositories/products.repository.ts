@@ -126,3 +126,48 @@ export async function insertProduct(input: CreateProductInput) {
     },
   });
 }
+
+export async function updateRelatedProducts(
+  productId: string,
+  relatedIds: string[],
+) {
+  await prisma.relatedProduct.deleteMany({
+    where: {
+      OR: [
+        { productId },
+        { relatedId: productId },
+      ],
+    },
+  });
+
+  const relations = relatedIds.flatMap((relatedId) => [
+    {
+      productId,
+      relatedId,
+    },
+    {
+      productId: relatedId,
+      relatedId: productId,
+    },
+  ]);
+
+  if (relations.length) {
+    await prisma.relatedProduct.createMany({
+      data: relations,
+      skipDuplicates: true,
+    });
+  }
+
+  return prisma.product.findUnique({
+    where: {
+      id: productId,
+    },
+    include: {
+      relatedFrom: {
+        include: {
+          related: true,
+        },
+      },
+    },
+  });
+}
