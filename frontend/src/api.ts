@@ -171,6 +171,18 @@ export const api = {
     });
   },
 
+  updateRelatedProducts(
+  productId: string,
+  relatedIds: string[],
+) {
+  return request(`/products/${productId}/related`, {
+    method: "PUT",
+    body: JSON.stringify({
+      relatedIds,
+    }),
+  });
+},
+
   getCompany(slug: string) {
     return request<CompanyPage>(`/companies/${slug}`);
   },

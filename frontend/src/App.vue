@@ -18,6 +18,8 @@ const error = ref("");
 const notice = ref("");
 const authMode = ref<"login" | "register">("login");
 const dashboardTab = ref<"products" | "company">("products");
+const selectedProductId = ref("");
+const relatedSelection = ref<string[]>([]);
 
 const authForm = ref({
   name: "",
@@ -141,6 +143,7 @@ async function submitAuth() {
 async function loadProducts() {
   if (!user.value) return;
   products.value = await api.listProducts();
+console.log("PRODUCTS", products.value)
 }
 
 async function saveCompany() {
@@ -268,6 +271,53 @@ async function copyProductLink(productSlug: string) {
   }
 }
 
+function openRelatedProducts(product: any) {
+  selectedProductId.value = product.id;
+
+  relatedSelection.value =
+    product.relatedFrom?.map(
+      (item: any) => item.related.id,
+    ) ?? [];
+}
+
+function toggleRelatedProduct(productId: string) {
+  const index =
+    relatedSelection.value.indexOf(productId);
+
+  if (index >= 0) {
+    relatedSelection.value.splice(index, 1);
+    return;
+  }
+
+  if (relatedSelection.value.length >= 4) {
+    showError(
+      "Voce pode selecionar no maximo 4 produtos.",
+    );
+    return;
+  }
+
+  relatedSelection.value.push(productId);
+}
+
+async function saveRelatedProducts() {
+  if (!selectedProductId.value) return;
+
+  try {
+    await api.updateRelatedProducts(
+      selectedProductId.value,
+      relatedSelection.value,
+    );
+
+    showNotice("Relacionamentos atualizados.");
+
+    await loadProducts();
+  } catch {
+    showError(
+      "Nao foi possivel salvar os relacionamentos.",
+    );
+  }
+}
+
 onMounted(async () => {
   await loadSession();
   await loadRoute();
@@ -292,40 +342,33 @@ onMounted(async () => {
     <p v-if="error" class="feedback error">{{ error }}</p>
     <p v-if="notice" class="feedback success">{{ notice }}</p>
 
-    <section v-if="currentView === 'dashboard'" class="workspace">
-      <aside class="side-panel">
-        <template v-if="!user">
-          <div class="segmented">
-            <button :class="{ active: authMode === 'login' }" type="button" @click="authMode = 'login'">
-              Entrar
-            </button>
-            <button :class="{ active: authMode === 'register' }" type="button" @click="authMode = 'register'">
-              Criar conta
-            </button>
-          </div>
+   <section v-if="currentView === 'dashboard' "class="workspace">
+        <aside class="side-panel">
+          <template v-if="!user"> 
+            <div class="segmented">
+              <button :class="{ active: authMode === 'login' }" type="button" @click="authMode = 'login'">
+                Entrar
+              </button>
+              <button :class="{ active: authMode === 'register' }" type="button" @click="authMode = 'register'">
+                Criar conta
+              </button>
+            </div>
 
-          <form class="form-grid" @submit.prevent="submitAuth">
-            <input v-if="authMode === 'register'" v-model="authForm.name" required placeholder="Nome da empresa" />
-            <input v-model="authForm.email" required type="email" placeholder="Email" />
-            <input v-model="authForm.password" required type="password" placeholder="Senha" />
-            <input v-if="authMode === 'register'" v-model="authForm.slug" placeholder="slug-da-empresa" />
-            <input v-if="authMode === 'register'" v-model="authForm.numeroWhatsApp" required placeholder="WhatsApp" />
-            <textarea v-if="authMode === 'register'" v-model="authForm.description" placeholder="Descricao da empresa" />
-            <button class="primary-button" type="submit" :disabled="loading">
-              {{ authMode === "login" ? "Entrar" : "Criar conta" }}
-            </button>
-          </form>
-        </template>
-
-        <template v-else>
-          <p class="eyebrow">Empresa</p>
-          <h1>{{ user.name }}</h1>
-          <p class="muted">{{ user.email }}</p>
-          <a class="primary-link" :href="publicCompanyUrl">Abrir pagina publica</a>
-        </template>
-      </aside>
-
-      <section class="main-panel">
+            <form class="form-grid" @submit.prevent="submitAuth">
+              <input v-if="authMode === 'register'" v-model="authForm.name" required placeholder="Nome da empresa" />
+              <input v-model="authForm.email" required type="email" placeholder="Email" />
+              <input v-model="authForm.password" required type="password" placeholder="Senha" />
+              <input v-if="authMode === 'register'" v-model="authForm.slug" placeholder="slug-da-empresa" />
+              <input v-if="authMode === 'register'" v-model="authForm.numeroWhatsApp" required placeholder="WhatsApp" />
+              <textarea v-if="authMode === 'register'" v-model="authForm.description" placeholder="Descricao da empresa" />
+              <button class="primary-button" type="submit" :disabled="loading">
+                {{ authMode === "login" ? "Entrar" : "Criar conta" }}
+              </button>
+            </form>
+          </template>
+        </aside>
+        
+      <section v-if="user"class="main-panel">
         <div class="panel-heading">
           <div class="segmented">
             <button
@@ -384,13 +427,56 @@ onMounted(async () => {
                   <button
                     type="button"
                     class="ghost-button"
-                    @click="copyProductLink(product.slug)"
+                    @click="openRelatedProducts(product)"
                   >
-                    Copiar link
+                    Relacionados
                   </button>
-                </div>
-              </div>
-          </article>
+                  </div>
+                  </div>
+
+                  <div
+                    v-if="selectedProductId === product.id"
+                    class="related-products-panel"
+                  >
+                    <h4>Produtos Relacionados</h4>
+
+                    <p>
+                      Selecione até 4 produtos.
+                    </p>
+
+                    <div
+                      v-for="candidate in products"
+                      :key="candidate.id"
+                    >
+                      <label
+                        v-if="candidate.id !== product.id"
+                        style="display:flex;gap:8px;align-items:center;margin-bottom:6px;"
+                      >
+                        <input
+                          type="checkbox"
+                          :checked="relatedSelection.includes(candidate.id)"
+                          @change="toggleRelatedProduct(candidate.id)"
+                        />
+
+                        {{ candidate.name }}
+                      </label>
+                    </div>
+
+                    <p>
+                      Selecionados:
+                      {{ relatedSelection.length }}/4
+                    </p>
+
+                    <button
+                      type="button"
+                      class="primary-button"
+                      @click="saveRelatedProducts"
+                    >
+                      Salvar Relacionamentos
+                    </button>
+                  </div>
+
+                  </article>
         </div>
         <div
           v-if="dashboardTab === 'company'"
