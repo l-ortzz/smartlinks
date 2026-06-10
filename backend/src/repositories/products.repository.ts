@@ -133,27 +133,16 @@ export async function updateRelatedProducts(
 ) {
   await prisma.relatedProduct.deleteMany({
     where: {
-      OR: [
-        { productId },
-        { relatedId: productId },
-      ],
+      productId,
     },
   });
 
-  const relations = relatedIds.flatMap((relatedId) => [
-    {
-      productId,
-      relatedId,
-    },
-    {
-      productId: relatedId,
-      relatedId: productId,
-    },
-  ]);
-
-  if (relations.length) {
+  if (relatedIds.length) {
     await prisma.relatedProduct.createMany({
-      data: relations,
+      data: relatedIds.map((relatedId) => ({
+        productId,
+        relatedId,
+      })),
       skipDuplicates: true,
     });
   }

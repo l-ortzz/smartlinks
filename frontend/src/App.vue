@@ -3,8 +3,6 @@ import { computed, onMounted, ref } from "vue";
 import { api, clearToken, getToken, setToken, type CompanyPage, type Product, type PublicProduct, type SessionUser } from "./api";
 import { formatCurrency, slugify } from "./format";
 
-console.log("API OBJ", api);
-console.log("UPDATE", api.updateProfile);
 
 type View = "dashboard" | "company" | "product";
 
@@ -143,7 +141,6 @@ async function submitAuth() {
 async function loadProducts() {
   if (!user.value) return;
   products.value = await api.listProducts();
-console.log("PRODUCTS", products.value)
 }
 
 async function saveCompany() {
@@ -443,29 +440,49 @@ onMounted(async () => {
                     <p>
                       Selecione até 4 produtos.
                     </p>
-
                     <div
                       v-for="candidate in products"
                       :key="candidate.id"
                     >
-                      <label
+                      <div
                         v-if="candidate.id !== product.id"
-                        style="display:flex;gap:8px;align-items:center;margin-bottom:6px;"
+                        class="related-option"
+                        :class="{
+                          selected:
+                            relatedSelection.includes(candidate.id)
+                        }"
+                        @click="toggleRelatedProduct(candidate.id)"
                       >
-                        <input
-                          type="checkbox"
-                          :checked="relatedSelection.includes(candidate.id)"
-                          @change="toggleRelatedProduct(candidate.id)"
+                        <img
+                          :src="
+                            candidate.images?.[0] ||
+                            'https://images.unsplash.com/photo-1525507119028-ed4c629a60a3?auto=format&fit=crop&w=900&q=80'
+                          "
+                          alt=""
                         />
 
-                        {{ candidate.name }}
-                      </label>
-                    </div>
+                        <div class="related-option-content">
+                          <strong>
+                            {{ candidate.name }}
+                          </strong>
 
-                    <p>
-                      Selecionados:
-                      {{ relatedSelection.length }}/4
-                    </p>
+                          <span>
+                            {{ formatCurrency(candidate.price) }}
+                          </span>
+                        </div>
+
+                        <div class="related-check">
+                          {{
+                            relatedSelection.includes(candidate.id)
+                              ? '✓'
+                              : '+'
+                          }}
+                        </div>
+                      </div>
+                    </div>
+                      <div class="related-counter">
+                      {{ relatedSelection.length }}/4 selecionados
+                    </div>
 
                     <button
                       type="button"
@@ -588,6 +605,49 @@ onMounted(async () => {
           <input v-model.number="reservationForm.quantity" required type="number" min="1" />
           <button class="primary-button" type="submit" :disabled="loading">Reservar no WhatsApp</button>
         </form>
+        <section
+          v-if="publicProduct.relatedFrom?.length"
+          class="related-products-public"
+        >
+          <div class="related-products-header">
+            <h3>Você também pode gostar</h3>
+
+            <p class="muted">
+              Produtos selecionados pela loja
+            </p>
+          </div>
+
+          <div class="related-products-grid">
+            <a
+              v-for="item in publicProduct.relatedFrom"
+              :key="item.related.id"
+              class="related-public-card"
+              :href="`#/produto/${item.related.slug}`"
+            >
+              <img
+                :src="
+                  item.related.images?.[0] ||
+                  'https://images.unsplash.com/photo-1525507119028-ed4c629a60a3?auto=format&fit=crop&w=900&q=80'
+                "
+                alt=""
+              />
+
+              <div class="related-public-content">
+                <strong>
+                  {{ item.related.name }}
+                </strong>
+
+                <span>
+                  {{ formatCurrency(item.related.price) }}
+                </span>
+
+                <div class="related-public-link">
+                  Ver Produto →
+                </div>
+              </div>
+            </a>
+          </div>
+        </section>
       </div>
     </section>
   </main>
