@@ -405,6 +405,12 @@ textarea {
     padding: 14px 18px;
   }
 
+  .related-products-grid {
+  grid-template-columns: 1fr;
+  }.related-products-grid {
+    grid-template-columns: 1fr;
+  }
+
   .workspace,
   .product-page {
     grid-template-columns: 1fr;
@@ -418,4 +424,141 @@ textarea {
   .public-page {
     padding: 22px 18px;
   }
+}
+
+.related-products-panel {
+  border-top: 1px solid #dfe5db;
+  margin-top: 16px;
+  padding-top: 16px;
+   max-width: 700px;
+   width: 100%;
+}
+
+.related-counter {
+  background: #edf1ea;
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 700;
+  margin: 12px 0;
+  padding: 8px 12px;
+}
+
+.related-option {
+  align-items: center;
+  border: 1px solid #dfe5db;
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  gap: 12px;
+  margin-bottom: 10px;
+  padding: 10px;
+  transition: all .2s ease;
+}
+
+.related-option:hover {
+  border-color: #1f7a5a;
+}
+
+.related-option.selected {
+  background: #edf8f2;
+  border-color: #1f7a5a;
+}
+
+.related-option img {
+  border-radius: 8px;
+  height: 56px;
+  object-fit: cover;
+  width: 56px;
+}
+
+.related-option-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.related-option-content span {
+  color: #63716b;
+  font-size: 14px;
+}
+
+.related-check {
+  align-items: center;
+  background: #1f7a5a;
+  border-radius: 999px;
+  color: white;
+  display: flex;
+  font-weight: 800;
+  height: 28px;
+  justify-content: center;
+  width: 28px;
+}
+
+.related-products-public {
+  border-top: 1px solid #dfe5db;
+  margin-top: 28px;
+  padding-top: 24px;
+}
+
+.related-products-header {
+  margin-bottom: 16px;
+}
+
+.related-products-header h3 {
+  margin-bottom: 4px;
+}
+
+.related-products-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(180px, 1fr)
+  );
+}
+
+.related-public-card {
+  background: #fff;
+  border: 1px solid #dfe5db;
+  border-radius: 10px;
+  overflow: hidden;
+  transition:
+    transform .2s ease,
+    box-shadow .2s ease;
+}
+
+.related-public-card:hover {
+  box-shadow:
+    0 10px 20px rgba(0,0,0,.08);
+
+  transform:
+    translateY(-2px);
+}
+
+.related-public-card img {
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  width: 100%;
+}
+
+.related-public-content {
+  padding: 12px;
+}
+
+.related-public-content strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.related-public-content span {
+  color: #63716b;
+  display: block;
+  margin-bottom: 10px;
+}
+
+.related-public-link {
+  color: #1f7a5a;
+  font-weight: 700;
 }
