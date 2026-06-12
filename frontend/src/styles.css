@@ -562,3 +562,181 @@ textarea {
   color: #1f7a5a;
   font-weight: 700;
 }
+
+.company-hero {
+  margin-bottom: 32px;
+}
+
+.company-banner {
+  background:
+    linear-gradient(
+      135deg,
+      #143d35,
+      #1f7a5a
+    );
+
+  border-radius: 18px;
+  height: 180px;
+  margin-bottom: -52px;
+}
+
+.company-hero-content {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  padding: 0 24px;
+  position: relative;
+  text-align: center;
+}
+
+.company-logo-large {
+  align-items: center;
+  background: white;
+  border: 4px solid white;
+  border-radius: 20px;
+  box-shadow:
+    0 10px 30px rgba(0,0,0,.08);
+
+  display: flex;
+  font-size: 28px;
+  font-weight: 800;
+  height: 104px;
+  justify-content: center;
+  margin-bottom: 18px;
+  overflow: hidden;
+  width: 104px;
+}
+
+.company-logo-large img {
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.company-description {
+  color: #63716b;
+  font-size: 16px;
+  line-height: 1.6;
+  margin-bottom: 12px;
+  max-width: 680px;
+}
+
+.company-social {
+  color: #1f7a5a;
+  font-weight: 700;
+  margin-bottom: 14px;
+}
+
+.company-info-cards {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 32px 0;
+}
+
+.info-card {
+  background: white;
+  border: 1px solid #dfe5db;
+  border-radius: 14px;
+  padding: 18px;
+  text-align: center;
+}
+
+.info-card strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.info-card span {
+  color: #63716b;
+  font-size: 14px;
+}
+
+.catalog-header {
+  margin-bottom: 28px;
+}
+
+.product-search {
+  background: white;
+  border: 1px solid #dfe5db;
+  border-radius: 14px;
+  font-size: 16px;
+  min-height: 54px;
+  padding: 0 18px;
+}
+
+.public-grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns:
+    repeat(
+      auto-fill,
+      minmax(240px, 1fr)
+    );
+}
+
+.public-card {
+  background: white;
+  border: 1px solid #dfe5db;
+  border-radius: 16px;
+  overflow: hidden;
+  transition:
+    transform .2s ease,
+    box-shadow .2s ease;
+}
+
+.public-card:hover {
+  box-shadow:
+    0 12px 28px rgba(0,0,0,.08);
+
+  transform:
+    translateY(-3px);
+}
+
+.public-card img {
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  width: 100%;
+}
+
+.public-card strong {
+  display: block;
+  font-size: 18px;
+  padding: 16px 16px 8px;
+}
+
+.public-card span {
+  color: #1f7a5a;
+  font-size: 18px;
+  font-weight: 800;
+  padding: 0 16px 18px;
+}
+
+@media (max-width: 820px) {
+
+  .company-banner {
+    height: 140px;
+  }
+
+  .company-info-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .company-logo-large {
+    height: 88px;
+    width: 88px;
+  }
+
+  .public-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+}
+
+.public-card-link {
+  color: #1f7a5a;
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 0 16px 16px;
+}

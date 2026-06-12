@@ -18,6 +18,7 @@ const authMode = ref<"login" | "register">("login");
 const dashboardTab = ref<"products" | "company">("products");
 const selectedProductId = ref("");
 const relatedSelection = ref<string[]>([]);
+const productSearch = ref("");
 
 const authForm = ref({
   name: "",
@@ -71,6 +72,24 @@ const routeSlug = computed(() => {
 });
 
 const publicCompanyUrl = computed(() => (user.value ? `#/empresa/${user.value.slug}` : "#/dashboard"));
+const filteredProducts = computed(() => {
+  if (!company.value) return [];
+
+  const search = productSearch.value
+    .toLowerCase()
+    .trim();
+
+  if (!search) {
+    return company.value.products;
+  }
+
+  return company.value.products.filter(
+    (product) =>
+      product.name
+        .toLowerCase()
+        .includes(search)
+  );
+});
 
 function showError(message: string) {
   error.value = message;
@@ -556,28 +575,115 @@ onMounted(async () => {
       </section>
     </section>
 
-    <section v-if="currentView === 'company' && company" class="public-page">
-      <div class="company-header">
-        <div class="logo-frame">
-          <img v-if="company.logo" :src="company.logo" alt="" />
-          <span v-else>{{ company.name.slice(0, 2).toUpperCase() }}</span>
-        </div>
-        <div>
-          <p class="eyebrow">Loja</p>
-          <h1>{{ company.name }}</h1>
-          <p>{{ company.description }}</p>
-          <p class="muted">{{ company.instagram }} {{ company.telefone }}</p>
-        </div>
-      </div>
+      <section
+        v-if="currentView === 'company' && company"
+        class="public-page"
+      >
+        <div class="company-hero">
 
-      <div class="public-grid">
-        <a v-for="product in company.products" :key="product.id" class="public-card" :href="`#/produto/${product.slug}`">
-          <img :src="product.images?.[0] || 'https://images.unsplash.com/photo-1525507119028-ed4c629a60a3?auto=format&fit=crop&w=900&q=80'" alt="" />
-          <strong>{{ product.name }}</strong>
-          <span>{{ formatCurrency(product.price) }}</span>
-        </a>
-      </div>
-    </section>
+          <div class="company-banner"></div>
+
+          <div class="company-hero-content">
+
+            <div class="company-logo-large">
+              <img
+                v-if="company.logo"
+                :src="company.logo"
+                alt=""
+              />
+
+              <span v-else>
+                {{ company.name.slice(0, 2).toUpperCase() }}
+              </span>
+            </div>
+
+            <h1>
+              {{ company.name }}
+            </h1>
+
+            <p class="company-description">
+              {{ company.description }}
+            </p>
+
+            <div
+              v-if="company.instagram"
+              class="company-social"
+            >
+              {{ company.instagram }}
+            </div>
+
+            <a
+              v-if="company.numeroWhatsApp"
+              class="primary-link"
+              :href="`https://wa.me/${company.numeroWhatsApp.replace(/\D/g,'')}`"
+              target="_blank"
+            >
+              Falar no WhatsApp
+            </a>
+
+          </div>
+
+          <div class="company-info-cards">
+
+            <div class="info-card">
+              <strong>WhatsApp</strong>
+              <span>Atendimento rápido</span>
+            </div>
+
+            <div class="info-card">
+              <strong>Catálogo Online</strong>
+              <span>Produtos disponíveis</span>
+            </div>
+
+            <div class="info-card">
+              <strong>Empresa Verificada</strong>
+              <span>Perfil ativo</span>
+            </div>
+
+          </div>
+
+          <div class="catalog-header">
+
+            <input
+              v-model="productSearch"
+              class="product-search"
+              placeholder="Buscar produtos..."
+            />
+
+          </div>
+
+        </div>
+
+        <div class="public-grid">
+          <a
+            v-for="product in filteredProducts"
+            :key="product.id"
+            class="public-card"
+            :href="`#/produto/${product.slug}`"
+          >
+            <img
+              :src="
+                product.images?.[0] ||
+                'https://images.unsplash.com/photo-1525507119028-ed4c629a60a3?auto=format&fit=crop&w=900&q=80'
+              "
+              alt=""
+            />
+
+            <strong>
+              {{ product.name }}
+            </strong>
+
+            <span>
+              {{ formatCurrency(product.price) }}
+            </span>
+
+            <span class="public-card-link">
+              Ver Produto →
+            </span>
+          </a>
+        </div>
+
+      </section>
 
     <section v-if="currentView === 'product' && publicProduct" class="product-page">
       <div class="product-media">
