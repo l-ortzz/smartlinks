@@ -359,62 +359,116 @@ onMounted(async () => {
     <p v-if="notice" class="feedback success">{{ notice }}</p>
 
    <section v-if="currentView === 'dashboard' "class="workspace">
-        <aside class="side-panel">
-          <template v-if="!user"> 
-            <div class="segmented">
-              <button :class="{ active: authMode === 'login' }" type="button" @click="authMode = 'login'">
-                Entrar
-              </button>
-              <button :class="{ active: authMode === 'register' }" type="button" @click="authMode = 'register'">
-                Criar conta
-              </button>
-            </div>
+    <aside
+      v-if="user"
+      class="dashboard-sidebar"
+    >
+      <div class="sidebar-brand">
 
-            <form class="form-grid" @submit.prevent="submitAuth">
-              <input v-if="authMode === 'register'" v-model="authForm.name" required placeholder="Nome da empresa" />
-              <input v-model="authForm.email" required type="email" placeholder="Email" />
-              <input v-model="authForm.password" required type="password" placeholder="Senha" />
-              <input v-if="authMode === 'register'" v-model="authForm.slug" placeholder="slug-da-empresa" />
-              <input v-if="authMode === 'register'" v-model="authForm.numeroWhatsApp" required placeholder="WhatsApp" />
-              <textarea v-if="authMode === 'register'" v-model="authForm.description" placeholder="Descricao da empresa" />
-              <button class="primary-button" type="submit" :disabled="loading">
-                {{ authMode === "login" ? "Entrar" : "Criar conta" }}
-              </button>
-            </form>
-          </template>
-        </aside>
-        
-      <section v-if="user"class="main-panel">
-        <div class="panel-heading">
-          <div class="segmented">
-            <button
-              type="button"
-              :class="{ active: dashboardTab === 'products' }"
-              @click="dashboardTab = 'products'"
-            >
-              Produtos
-            </button>
+        <span class="brand-mark">
+          SL
+        </span>
 
-            <button
-              type="button"
-              :class="{ active: dashboardTab === 'company' }"
-              @click="dashboardTab = 'company'"
-            >
-              Minha Empresa
-            </button>
-          </div>
-          <div>
-            <p class="eyebrow">Smart Pages</p>
-            <h2>Produtos</h2>
-          </div>
-          <span class="counter">{{ products.length }} itens</span>
+        <div>
+          <strong>
+            Smart Links
+          </strong>
         </div>
 
-<form
-  v-if="user && dashboardTab === 'products'"
-  class="product-form"
-  @submit.prevent="createProduct"
->          <input v-model="productForm.name" required placeholder="Nome do produto" />
+      </div>
+
+      <nav class="sidebar-nav">
+
+        <button
+          type="button"
+          class="sidebar-item"
+          :class="{
+            active: dashboardTab === 'products'
+          }"
+          @click="dashboardTab = 'products'"
+        >
+          📦 Produtos
+        </button>
+
+        <button
+          type="button"
+          class="sidebar-item"
+          :class="{
+            active: dashboardTab === 'company'
+          }"
+          @click="dashboardTab = 'company'"
+        >
+          🏢 Minha Empresa
+        </button>
+
+        <button
+          type="button"
+          class="sidebar-item disabled"
+        >
+          📈 Analytics
+          <small>(em breve)</small>
+        </button>
+
+      </nav>
+
+      <div class="sidebar-footer">
+
+        <p class="eyebrow">
+          Página Pública
+        </p>
+
+        <a
+          class="primary-link"
+          :href="publicCompanyUrl"
+          target="_blank"
+        >
+          Abrir Vitrine
+        </a>
+
+      </div>
+
+    </aside>
+        
+      <section v-if="user"class="main-panel">
+        <div class="dashboard-header">
+
+        <div>
+          <p class="eyebrow">
+            Smart Links
+          </p>
+
+          <h1 class="dashboard-title">
+            {{
+              dashboardTab === 'products'
+                ? 'Produtos'
+                : 'Minha Empresa'
+            }}
+          </h1>
+
+          <p class="dashboard-subtitle">
+            {{
+              dashboardTab === 'products'
+                ? 'Gerencie seu catálogo e publique novos produtos.'
+                : 'Gerencie as informações da sua empresa.'
+            }}
+          </p>
+        </div>
+
+        <div class="dashboard-counter">
+          {{
+            dashboardTab === 'products'
+              ? `${products.length} produtos`
+              : 'Perfil'
+          }}
+        </div>
+
+      </div>
+
+        <form
+          v-if="user && dashboardTab === 'products'"
+          class="product-form"
+          @submit.prevent="createProduct"
+        >          <input v-model="productForm.name" required placeholder="Nome do produto" />
           <input v-model="productForm.slug" placeholder="slug-do-produto" />
           <input v-model.number="productForm.price" required type="number" min="0" step="0.01" placeholder="Preco" />
           <input v-model="productForm.image" placeholder="URL da imagem" />
@@ -430,15 +484,23 @@ onMounted(async () => {
           >
           <article v-for="product in products" :key="product.id" class="product-card">
             <img :src="product.images?.[0] || 'https://images.unsplash.com/photo-1525507119028-ed4c629a60a3?auto=format&fit=crop&w=900&q=80'" alt="" />
-            <div>
+            <div class="product-card-content">
                 <h3>{{ product.name }}</h3>
 
                 <p>{{ formatCurrency(product.price) }}</p>
 
                 <div class="product-actions">
-                  <a :href="`#/produto/${product.slug}`">
+                  <a class="product-action-link" :href="`#/produto/${product.slug}`">
                     Ver pagina
                   </a>
+
+                  <button
+                    type="button"
+                    class="ghost-button"
+                    @click="copyProductLink(product.slug)"
+                    >
+                    Copiar link
+                  </button>
 
                   <button
                     type="button"
@@ -518,16 +580,55 @@ onMounted(async () => {
           v-if="dashboardTab === 'company'"
           class="company-settings"
         >
-          <div class="panel-heading">
-            <div>
-              <p class="eyebrow">Smart Links</p>
-              <h2>Minha Empresa</h2>
-            </div>
+          <div class="company-profile-header">
+
+          <div class="company-avatar-preview">
+
+            <img
+              v-if="companyForm.logo"
+              :src="companyForm.logo"
+              alt=""
+            />
+
+            <span v-else>
+              {{
+                (companyForm.name || 'SL')
+                  .slice(0, 2)
+                  .toUpperCase()
+              }}
+            </span>
+
           </div>
+
+          <div>
+
+            <h2>
+              {{ companyForm.name || 'Minha Empresa' }}
+            </h2>
+
+            <p class="muted">
+              {{ companyForm.instagram || '@instagram' }}
+            </p>
+
+          </div>
+
+        </div>
 
           <div class="product-form">
            <form class="product-form" @submit.prevent="saveCompany">
-              <input
+            <div class="settings-section">
+
+              <h3>
+                Identidade da Empresa
+              </h3>
+
+              <p class="muted">
+                Informações públicas exibidas na sua vitrine.
+              </p>
+
+            </div>  
+            <div class="settings-divider"></div>
+            <input
                 v-model="companyForm.name"
                 placeholder="Nome da empresa"
               />
@@ -542,6 +643,10 @@ onMounted(async () => {
                 placeholder="Instagram"
               />
 
+              <div class="settings-divider"></div>
+                <div class="settings-section">
+                  <h3>Contato</h3>
+                </div>
               <input
                 v-model="companyForm.telefone"
                 placeholder="Telefone"
@@ -553,13 +658,14 @@ onMounted(async () => {
               />
 
               <input
-                v-model="companyForm.logo"
-                placeholder="URL da Logo"
-              />
-
-              <input
                 v-model="companyForm.endereco"
                 placeholder="Endereço"
+              />
+
+              <div class="settings-divider"></div>
+              <input
+                v-model="companyForm.logo"
+                placeholder="URL da Logo"
               />
 
               <button
