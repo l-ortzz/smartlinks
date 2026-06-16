@@ -915,3 +915,14 @@ textarea {
   height: 1px;
   margin: 12px 0;
 }
+
+.logo-upload {
+  display: grid;
+  gap: 8px;
+}
+
+.logo-upload span {
+  color: #63716b;
+  font-size: 13px;
+  font-weight: 700;
+}

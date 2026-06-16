@@ -99,8 +99,9 @@ export function clearToken() {
 
 async function request<T>(path: string, options: RequestInit = {}) {
   const headers = new Headers(options.headers);
+  const isFormData = options.body instanceof FormData;
 
-  if (!headers.has("Content-Type") && options.body) {
+  if (!headers.has("Content-Type") && options.body && !isFormData) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -159,6 +160,16 @@ export const api = {
     body: JSON.stringify(input),
   });
 },
+
+  uploadLogo(file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    return request<{ url: string }>("/uploads/logo", {
+      method: "POST",
+      body: formData,
+    });
+  },
 
   listProducts() {
     return request<Product[]>("/products");

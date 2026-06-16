@@ -12,6 +12,7 @@ const products = ref<Product[]>([]);
 const company = ref<CompanyPage | null>(null);
 const publicProduct = ref<PublicProduct | null>(null);
 const loading = ref(false);
+const uploadingLogo = ref(false);
 const error = ref("");
 const notice = ref("");
 const authMode = ref<"login" | "register">("login");
@@ -188,6 +189,36 @@ async function saveCompany() {
   }
 }
 
+async function uploadCompanyLogo(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+
+  if (!file) return;
+
+  uploadingLogo.value = true;
+
+  try {
+    const result = await api.uploadLogo(file);
+
+    companyForm.value.logo = result.url;
+
+    await api.updateProfile({
+      logo: result.url,
+    });
+
+    showNotice("Logo atualizada.");
+  } catch (err) {
+    showError(
+      err instanceof Error
+        ? err.message
+        : "Nao foi possivel enviar a logo.",
+    );
+  } finally {
+    uploadingLogo.value = false;
+    input.value = "";
+  }
+}
+
 function parseValues(value: string) {
   return value
     .split(",")
@@ -358,8 +389,113 @@ onMounted(async () => {
     <p v-if="error" class="feedback error">{{ error }}</p>
     <p v-if="notice" class="feedback success">{{ notice }}</p>
 
-   <section v-if="currentView === 'dashboard' "class="workspace">
-    <aside
+    <section
+      v-if="currentView === 'dashboard' && !user"
+      class="workspace"
+    >
+      <section class="main-panel">
+
+        <p class="eyebrow">Smart Links</p>
+
+        <h1>
+          {{
+            authMode === 'login'
+              ? 'Entrar'
+              : 'Criar conta'
+          }}
+        </h1>
+
+        <p class="muted">
+          {{
+            authMode === 'login'
+              ? 'Acesse sua vitrine.'
+              : 'Crie sua empresa gratuitamente.'
+          }}
+        </p>
+
+        <form
+          class="form-grid"
+          @submit.prevent="submitAuth"
+        >
+
+          <input
+            v-if="authMode === 'register'"
+            v-model="authForm.name"
+            required
+            placeholder="Nome da empresa"
+          />
+
+          <input
+            v-model="authForm.email"
+            required
+            type="email"
+            placeholder="Email"
+          />
+
+          <input
+            v-model="authForm.password"
+            required
+            type="password"
+            placeholder="Senha"
+          />
+
+          <template v-if="authMode === 'register'">
+
+            <input
+              v-model="authForm.slug"
+              placeholder="slug-da-empresa"
+            />
+
+            <input
+              v-model="authForm.numeroWhatsApp"
+              required
+              placeholder="WhatsApp"
+            />
+
+            <textarea
+              v-model="authForm.description"
+              placeholder="Descrição"
+            />
+
+          </template>
+
+          <button
+            class="primary-button"
+            type="submit"
+            :disabled="loading"
+          >
+            {{
+              authMode === 'login'
+                ? 'Entrar'
+                : 'Criar conta'
+            }}
+          </button>
+
+        </form>
+
+        <button
+          class="ghost-button"
+          type="button"
+          @click="
+            authMode =
+              authMode === 'login'
+                ? 'register'
+                : 'login'
+          "
+        >
+          {{
+            authMode === 'login'
+              ? 'Criar conta'
+              : 'Já tenho conta'
+          }}
+        </button>
+
+      </section>
+    </section>
+
+    <section v-if="currentView === 'dashboard' && user"class="workspace">
+
+      <aside
       v-if="user"
       class="dashboard-sidebar"
     >
@@ -663,6 +799,16 @@ onMounted(async () => {
               />
 
               <div class="settings-divider"></div>
+              <label class="logo-upload">
+                <span>Logo da empresa</span>
+                <input
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                  :disabled="uploadingLogo"
+                  @change="uploadCompanyLogo"
+                />
+              </label>
+
               <input
                 v-model="companyForm.logo"
                 placeholder="URL da Logo"
