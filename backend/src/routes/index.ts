@@ -7,6 +7,7 @@ import { productRoutes } from "./products.routes.ts";
 import { publicPagesRoutes } from "./public-pages.routes.ts";
 import { reservationRoutes } from "./reservations.routes.ts";
 import { serviceRoutes } from "./services.routes.ts";
+import { uploadRoutes } from "./uploads.routes.ts";
 import { userRoutes } from "./users.routes.ts";
 
 export async function registerRoutes(app: FastifyInstance) {
@@ -19,4 +20,5 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(serviceRoutes, { prefix: "/services" });
   await app.register(availabilityRoutes, { prefix: "/availability" });
   await app.register(appointmentRoutes, { prefix: "/appointments" });
+  await app.register(uploadRoutes, { prefix: "/uploads" });
 }

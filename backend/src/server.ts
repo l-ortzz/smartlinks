@@ -1,5 +1,6 @@
 import "dotenv/config";
 import cors from "@fastify/cors";
+import multipart from "@fastify/multipart";
 import Fastify from "fastify";
 import { registerRoutes } from "./routes/index.ts";
 
@@ -11,6 +12,8 @@ await app.register(cors, {
   origin: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
 });
+
+await app.register(multipart);
 
 await registerRoutes(app);
 
