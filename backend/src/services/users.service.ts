@@ -21,6 +21,7 @@ export async function updateUserProfileService(
     name?: string;
     description?: string;
     logo?: string;
+    heroImage?: string;
     instagram?: string;
     telefone?: string;
     numeroWhatsApp?: string;

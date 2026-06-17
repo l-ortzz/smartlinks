@@ -21,6 +21,7 @@ model User {
   passwordHash   String?
   description    String?
   logo           String?
+  heroImage      String?
   instagram      String?
   telefone       String?
   endereco       String?

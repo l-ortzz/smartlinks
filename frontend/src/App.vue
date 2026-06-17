@@ -50,6 +50,7 @@ const companyForm = ref({
   name: "",
   description: "",
   logo: "",
+  heroImage: "",
   instagram: "",
   telefone: "",
   numeroWhatsApp: "",
@@ -114,6 +115,7 @@ async function loadSession() {
       name: profile.name ?? "",
       description: profile.description ?? "",
       logo: profile.logo ?? "",
+      heroImage: profile.heroImage ?? "",
       instagram: profile.instagram ?? "",
       telefone: profile.telefone ?? "",
       numeroWhatsApp: profile.numeroWhatsApp ?? "",
@@ -171,6 +173,7 @@ async function saveCompany() {
       name: companyForm.value.name,
       description: companyForm.value.description,
       logo: companyForm.value.logo,
+      heroImage: companyForm.value.heroImage,
       instagram: companyForm.value.instagram,
       telefone: companyForm.value.telefone,
       numeroWhatsApp: companyForm.value.numeroWhatsApp,
@@ -189,7 +192,7 @@ async function saveCompany() {
   }
 }
 
-async function uploadCompanyLogo(event: Event) {
+async function uploadCompanyHero(event: Event) {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
 
@@ -200,18 +203,18 @@ async function uploadCompanyLogo(event: Event) {
   try {
     const result = await api.uploadLogo(file);
 
-    companyForm.value.logo = result.url;
+    companyForm.value.heroImage = result.url;
 
     await api.updateProfile({
-      logo: result.url,
+      heroImage: result.url,
     });
 
-    showNotice("Logo atualizada.");
+    showNotice("Banner atualizado.");
   } catch (err) {
     showError(
       err instanceof Error
         ? err.message
-        : "Nao foi possivel enviar a logo.",
+        : "Nao foi possivel enviar o banner.",
     );
   } finally {
     uploadingLogo.value = false;
@@ -807,6 +810,23 @@ onMounted(async () => {
                   :disabled="uploadingLogo"
                   @change="uploadCompanyLogo"
                 />
+                <div class="settings-divider"></div>
+
+                <label class="logo-upload">
+                  <span>Banner Hero</span>
+
+                  <input
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                    :disabled="uploadingLogo"
+                    @change="uploadCompanyHero"
+                  />
+                </label>
+
+                <input
+                  v-model="companyForm.heroImage"
+                  placeholder="URL do Banner"
+                />
               </label>
 
               <input
@@ -833,7 +853,14 @@ onMounted(async () => {
       >
         <div class="company-hero">
 
-          <div class="company-banner"></div>
+         <div class="company-banner">
+            <img
+              v-if="company.heroImage"
+              :src="company.heroImage"
+              alt=""
+            />
+
+          </div>
 
           <div class="company-hero-content">
 

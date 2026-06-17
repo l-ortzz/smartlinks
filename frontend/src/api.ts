@@ -42,6 +42,7 @@ export type CompanyPage = {
   slug: string;
   description?: string | null;
   logo?: string | null;
+  heroImage?: string | null;
   instagram?: string | null;
   numeroWhatsApp: string;
   telefone?: string | null;
@@ -53,6 +54,7 @@ export type UpdateCompanyInput = {
   name?: string;
   description?: string;
   logo?: string;
+  heroImage?: string;
   instagram?: string;
   telefone?: string;
   numeroWhatsApp?: string;
@@ -220,6 +222,7 @@ export type CompanyProfile = {
   slug: string;
   description?: string | null;
   logo?: string | null;
+  heroImage?: string | null;
   instagram?: string | null;
   numeroWhatsApp?: string | null;
   telefone?: string | null;

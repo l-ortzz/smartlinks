@@ -40,6 +40,7 @@ export async function updateUserById(
     name?: string;
     description?: string;
     logo?: string;
+    heroImage?: string;
     instagram?: string;
     telefone?: string;
     numeroWhatsApp?: string;
@@ -65,6 +66,7 @@ export async function findCompanyPageBySlug(slug: string) {
       slug: true,
       description: true,
       logo: true,
+      heroImage: true,
       instagram: true,
       numeroWhatsApp: true,
       telefone: true,
@@ -102,6 +104,7 @@ export async function findProfileByUserId(id: string) {
       slug: true,
       description: true,
       logo: true,
+      heroImage: true,
       instagram: true,
       numeroWhatsApp: true,
       telefone: true,

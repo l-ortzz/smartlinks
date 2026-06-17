@@ -16,6 +16,7 @@ type UpdateProfileRequest = FastifyRequest<{
     name?: string;
     description?: string;
     logo?: string;
+    heroImage?: string;
     instagram?: string;
     telefone?: string;
     numeroWhatsApp?: string;
@@ -50,15 +51,16 @@ export async function updateMyProfile(
   try {
     const user = await updateUserProfileService(
       request.user.id,
-      request.body as {
-  name?: string;
-  description?: string;
-  logo?: string;
-  instagram?: string;
-  telefone?: string;
-  numeroWhatsApp?: string;
-  endereco?: string;
-},
+    request.body as {
+      name?: string;
+      description?: string;
+      logo?: string;
+      heroImage?: string;
+      instagram?: string;
+      telefone?: string;
+      numeroWhatsApp?: string;
+      endereco?: string;
+    },
     );
 
     return reply.send(user);

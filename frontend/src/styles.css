@@ -568,25 +568,26 @@ textarea {
 }
 
 .company-banner {
-  background:
-    linear-gradient(
-      135deg,
-      #143d35,
-      #1f7a5a
-    );
+  border-radius: 24px;
+  height: 320px;
+  overflow: hidden;
+  position: relative;
+}
 
-  border-radius: 18px;
-  height: 180px;
-  margin-bottom: -52px;
+.company-banner img {
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
 }
 
 .company-hero-content {
   align-items: center;
   display: flex;
   flex-direction: column;
-  padding: 0 24px;
+  margin-top: -52px;
   position: relative;
   text-align: center;
+  z-index: 2;
 }
 
 .company-logo-large {
@@ -722,10 +723,10 @@ textarea {
     grid-template-columns: 1fr;
   }
 
-  .company-logo-large {
-    height: 88px;
-    width: 88px;
-  }
+.company-logo-large {
+  height: 120px;
+  width: 120px;
+}
 
   .public-grid {
     grid-template-columns: 1fr 1fr;
