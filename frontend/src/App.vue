@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { api, clearToken, getToken, setToken, type CompanyPage, type Product, type PublicProduct, type SessionUser } from "./api";
+import { api, clearToken, getToken, setToken, type CompanyPage, type ProductAnalytics, type Product, type PublicProduct, type SessionUser } from "./api";
 import { formatCurrency, slugify } from "./format";
 
 
@@ -9,6 +9,7 @@ type View = "dashboard" | "company" | "product";
 const route = ref(window.location.hash || "#/dashboard");
 const user = ref<SessionUser | null>(null);
 const products = ref<Product[]>([]);
+const analytics = ref<ProductAnalytics[]>([]);
 const company = ref<CompanyPage | null>(null);
 const publicProduct = ref<PublicProduct | null>(null);
 const loading = ref(false);
@@ -16,7 +17,7 @@ const uploadingLogo = ref(false);
 const error = ref("");
 const notice = ref("");
 const authMode = ref<"login" | "register">("login");
-const dashboardTab = ref<"products" | "company">("products");
+const dashboardTab = ref<  "products"  | "company"  | "analytics">("products");
 const selectedProductId = ref("");
 const relatedSelection = ref<string[]>([]);
 const productSearch = ref("");
@@ -93,6 +94,24 @@ const filteredProducts = computed(() => {
   );
 });
 
+const totalClicks = computed(() =>
+  analytics.value.reduce(
+    (sum, item) => sum + item.clicks,
+    0,
+  ),
+);
+
+const totalReservations = computed(() =>
+  analytics.value.reduce(
+    (sum, item) => sum + item.reservations,
+    0,
+  ),
+);
+
+const monitoredProducts = computed(
+  () => analytics.value.length,
+);
+
 function showError(message: string) {
   error.value = message;
   notice.value = "";
@@ -165,6 +184,12 @@ async function loadProducts() {
   products.value = await api.listProducts();
 }
 
+async function loadAnalytics() {
+  if (!user.value) return;
+
+  analytics.value = await api.getAnalytics();
+}
+
 async function saveCompany() {
   loading.value = true;
 
@@ -189,6 +214,36 @@ async function saveCompany() {
     );
   } finally {
     loading.value = false;
+  }
+}
+
+async function uploadCompanyLogo(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+
+  if (!file) return;
+
+  uploadingLogo.value = true;
+
+  try {
+    const result = await api.uploadLogo(file);
+
+    companyForm.value.logo = result.url;
+
+    await api.updateProfile({
+      logo: result.url,
+    });
+
+    showNotice("Logo atualizada.");
+  } catch (err) {
+    showError(
+      err instanceof Error
+        ? err.message
+        : "Nao foi possivel enviar a logo.",
+    );
+  } finally {
+    uploadingLogo.value = false;
+    input.value = "";
   }
 }
 
@@ -540,13 +595,19 @@ onMounted(async () => {
           🏢 Minha Empresa
         </button>
 
-        <button
-          type="button"
-          class="sidebar-item disabled"
-        >
-          📈 Analytics
-          <small>(em breve)</small>
-        </button>
+      <button
+        type="button"
+        class="sidebar-item"
+        :class="{
+          active: dashboardTab === 'analytics'
+        }"
+        @click="
+          dashboardTab = 'analytics';
+          loadAnalytics();
+        "
+      >
+        📈 Analytics
+      </button>
 
       </nav>
 
@@ -577,28 +638,34 @@ onMounted(async () => {
           </p>
 
           <h1 class="dashboard-title">
-            {{
-              dashboardTab === 'products'
-                ? 'Produtos'
+          {{
+            dashboardTab === 'products'
+              ? 'Produtos'
+              : dashboardTab === 'analytics'
+                ? 'Analytics'
                 : 'Minha Empresa'
-            }}
+          }}
           </h1>
 
           <p class="dashboard-subtitle">
-            {{
-              dashboardTab === 'products'
-                ? 'Gerencie seu catálogo e publique novos produtos.'
+          {{
+            dashboardTab === 'products'
+              ? 'Gerencie seu catálogo e publique novos produtos.'
+              : dashboardTab === 'analytics'
+                ? 'Acompanhe o desempenho dos seus produtos.'
                 : 'Gerencie as informações da sua empresa.'
-            }}
+          }}
           </p>
         </div>
 
         <div class="dashboard-counter">
-          {{
-            dashboardTab === 'products'
-              ? `${products.length} produtos`
+        {{
+          dashboardTab === 'products'
+            ? `${products.length} produtos`
+            : dashboardTab === 'analytics'
+              ? `${monitoredProducts} produtos`
               : 'Perfil'
-          }}
+        }}
         </div>
 
       </div>
@@ -715,6 +782,65 @@ onMounted(async () => {
 
                   </article>
         </div>
+        <div
+          v-if="dashboardTab === 'analytics'"
+          class="analytics-page"
+        >
+          <div class="analytics-cards">
+
+            <div class="analytics-card">
+              <span>Total de Cliques</span>
+              <strong>{{ totalClicks }}</strong>
+            </div>
+
+            <div class="analytics-card">
+              <span>Total de Reservas</span>
+              <strong>{{ totalReservations }}</strong>
+            </div>
+
+            <div class="analytics-card">
+              <span>Produtos Monitorados</span>
+              <strong>{{ monitoredProducts }}</strong>
+            </div>
+
+          </div>
+
+          <div class="analytics-table-wrapper">
+
+            <table class="analytics-table">
+
+              <thead>
+                <tr>
+                  <th>Produto</th>
+                  <th>Cliques</th>
+                  <th>Reservas</th>
+                </tr>
+              </thead>
+
+              <tbody>
+
+                <tr
+                  v-for="item in analytics"
+                  :key="item.productId"
+                >
+                  <td>{{ item.productName }}</td>
+                  <td>{{ item.clicks }}</td>
+                  <td>{{ item.reservations }}</td>
+                </tr>
+
+                <tr v-if="!analytics.length">
+                  <td colspan="3">
+                    Nenhum dado encontrado.
+                  </td>
+                </tr>
+
+              </tbody>
+
+            </table>
+
+          </div>
+        </div>
+
         <div
           v-if="dashboardTab === 'company'"
           class="company-settings"

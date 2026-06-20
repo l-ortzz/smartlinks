@@ -68,6 +68,13 @@ export type PublicProduct = Product & {
   }>;
 };
 
+export type ProductAnalytics = {
+  productId: string;
+  productName: string;
+  clicks: number;
+  reservations: number;
+};
+
 export type CreateProductInput = {
   slug: string;
   name: string;
@@ -176,6 +183,10 @@ export const api = {
   listProducts() {
     return request<Product[]>("/products");
   },
+
+  getAnalytics() {
+  return request<ProductAnalytics[]>("/analytics/products");
+},
 
   createProduct(input: CreateProductInput) {
     return request<Product>("/products", {
