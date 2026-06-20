@@ -928,6 +928,76 @@ textarea {
   font-weight: 700;
 }
 
+.product-image-upload,
+.product-image-preview-grid {
+  grid-column: 1 / -1;
+}
+
+.product-image-preview-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+}
+
+.product-image-preview {
+  border: 1px solid #dfe5db;
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+}
+
+.product-image-preview img {
+  aspect-ratio: 1;
+  display: block;
+  object-fit: cover;
+  width: 100%;
+}
+
+.product-image-preview span,
+.product-image-remove {
+  position: absolute;
+}
+
+.product-image-preview span {
+  background: #1f7a5a;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 800;
+  left: 8px;
+  padding: 4px 8px;
+  top: 8px;
+}
+
+.product-image-remove {
+  background: rgba(23, 33, 31, .82);
+  border: 0;
+  border-radius: 6px;
+  bottom: 8px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  left: 8px;
+  min-height: 30px;
+  right: 8px;
+}
+
+.product-media-thumbs {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+  margin-top: 12px;
+}
+
+.product-media-thumbs img {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  max-height: none;
+  object-fit: cover;
+  width: 100%;
+}
+
 .analytics-page {
   display: grid;
   gap: 24px;

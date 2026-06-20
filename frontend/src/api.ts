@@ -180,6 +180,19 @@ export const api = {
     });
   },
 
+  uploadProductImages(files: File[]) {
+    const formData = new FormData();
+
+    files.forEach((file) => {
+      formData.append("files[]", file);
+    });
+
+    return request<{ urls: string[] }>("/uploads/product", {
+      method: "POST",
+      body: formData,
+    });
+  },
+
   listProducts() {
     return request<Product[]>("/products");
   },

@@ -14,6 +14,7 @@ const company = ref<CompanyPage | null>(null);
 const publicProduct = ref<PublicProduct | null>(null);
 const loading = ref(false);
 const uploadingLogo = ref(false);
+const uploadingProductImages = ref(false);
 const error = ref("");
 const notice = ref("");
 const authMode = ref<"login" | "register">("login");
@@ -37,6 +38,7 @@ const productForm = ref({
   description: "",
   price: 0,
   image: "",
+  images: [] as string[],
   colorValues: "",
   sizeValues: "",
 });
@@ -277,6 +279,53 @@ async function uploadCompanyHero(event: Event) {
   }
 }
 
+async function uploadProductImages(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const selectedFiles = Array.from(input.files ?? []);
+
+  if (!selectedFiles.length) return;
+
+  const availableSlots = 5 - productForm.value.images.length;
+
+  if (availableSlots <= 0) {
+    showError("Voce pode enviar no maximo 5 imagens por produto.");
+    input.value = "";
+    return;
+  }
+
+  const files = selectedFiles.slice(0, availableSlots);
+
+  if (selectedFiles.length > availableSlots) {
+    showNotice(`Apenas ${availableSlots} imagem(ns) foram enviadas.`);
+  }
+
+  uploadingProductImages.value = true;
+
+  try {
+    const result = await api.uploadProductImages(files);
+
+    productForm.value.images = [
+      ...productForm.value.images,
+      ...result.urls,
+    ].slice(0, 5);
+
+    showNotice("Imagem(ns) do produto enviada(s).");
+  } catch (err) {
+    showError(
+      err instanceof Error
+        ? err.message
+        : "Nao foi possivel enviar as imagens.",
+    );
+  } finally {
+    uploadingProductImages.value = false;
+    input.value = "";
+  }
+}
+
+function removeProductImage(index: number) {
+  productForm.value.images.splice(index, 1);
+}
+
 function parseValues(value: string) {
   return value
     .split(",")
@@ -301,7 +350,11 @@ async function createProduct() {
       slug: productForm.value.slug || slugify(productForm.value.name),
       description: productForm.value.description,
       price: Number(productForm.value.price),
-      images: productForm.value.image ? [productForm.value.image] : undefined,
+      images: productForm.value.images.length
+        ? productForm.value.images
+        : productForm.value.image
+          ? [productForm.value.image]
+          : undefined,
       attributes,
     });
 
@@ -311,6 +364,7 @@ async function createProduct() {
       description: "",
       price: 0,
       image: "",
+      images: [],
       colorValues: "",
       sizeValues: "",
     };
@@ -677,6 +731,45 @@ onMounted(async () => {
         >          <input v-model="productForm.name" required placeholder="Nome do produto" />
           <input v-model="productForm.slug" placeholder="slug-do-produto" />
           <input v-model.number="productForm.price" required type="number" min="0" step="0.01" placeholder="Preco" />
+          <label class="logo-upload product-image-upload">
+            <span>Imagens do produto</span>
+            <input
+              type="file"
+              multiple
+              accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+              :disabled="uploadingProductImages || productForm.images.length >= 5"
+              @change="uploadProductImages"
+            />
+          </label>
+
+          <div
+            v-if="productForm.images.length"
+            class="product-image-preview-grid"
+          >
+            <div
+              v-for="(image, index) in productForm.images"
+              :key="image"
+              class="product-image-preview"
+            >
+              <img
+                :src="image"
+                alt=""
+              />
+
+              <button
+                type="button"
+                class="product-image-remove"
+                @click="removeProductImage(index)"
+              >
+                Remover
+              </button>
+
+              <span v-if="index === 0">
+                Capa
+              </span>
+            </div>
+          </div>
+
           <input v-model="productForm.image" placeholder="URL da imagem" />
           <input v-model="productForm.colorValues" placeholder="Cores: Preto, Branco" />
           <input v-model="productForm.sizeValues" placeholder="Tamanhos: P, M, G" />
@@ -1093,6 +1186,18 @@ onMounted(async () => {
     <section v-if="currentView === 'product' && publicProduct" class="product-page">
       <div class="product-media">
         <img :src="publicProduct.images?.[0] || 'https://images.unsplash.com/photo-1525507119028-ed4c629a60a3?auto=format&fit=crop&w=1200&q=80'" alt="" />
+
+        <div
+          v-if="publicProduct.images?.length && publicProduct.images.length > 1"
+          class="product-media-thumbs"
+        >
+          <img
+            v-for="image in publicProduct.images"
+            :key="image"
+            :src="image"
+            alt=""
+          />
+        </div>
       </div>
 
       <div class="purchase-panel">
