@@ -1,5 +1,8 @@
 import { prisma } from "../lib/prisma.ts";
-import type { CreateAppointmentInput } from "../types/appointments.ts";
+import type {
+  AppointmentStatus,
+  CreateAppointmentInput,
+} from "../types/appointments.ts";
 
 export async function findAppointments(userId?: string) {
   return prisma.appointment.findMany({
@@ -27,6 +30,43 @@ export async function insertAppointment(input: CreateAppointmentInput) {
     include: {
       service: true,
       user: true,
+    },
+  });
+}
+
+export async function findServiceForAppointment(serviceId: string) {
+  return prisma.service.findUnique({
+    where: {
+      id: serviceId,
+    },
+  });
+}
+
+export async function updateAppointmentStatusById(
+  id: string,
+  userId: string,
+  status: AppointmentStatus,
+) {
+  const result = await prisma.appointment.updateMany({
+    where: {
+      id,
+      userId,
+    },
+    data: {
+      status,
+    },
+  });
+
+  if (!result.count) {
+    throw new Error("Appointment not found.");
+  }
+
+  return prisma.appointment.findUnique({
+    where: {
+      id,
+    },
+    include: {
+      service: true,
     },
   });
 }

@@ -30,3 +30,15 @@ export const createAvailabilitySchema = {
     },
   },
 };
+
+export const updateAvailabilitySchema = {
+  body: {
+    type: "object",
+    properties: {
+      weekday: { type: "string", enum: weekdays },
+      startTime: { type: "string", pattern: "^\\d{2}:\\d{2}$" },
+      endTime: { type: "string", pattern: "^\\d{2}:\\d{2}$" },
+      active: { type: "boolean" },
+    },
+  },
+};

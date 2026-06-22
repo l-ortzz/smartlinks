@@ -1,9 +1,30 @@
 import { computed, onMounted, ref } from "vue";
 import { api, clearToken, getToken, setToken } from "./api";
 import { formatCurrency, slugify } from "./format";
+const weekdayOptions = [
+    { value: "MONDAY", label: "Segunda-feira" },
+    { value: "TUESDAY", label: "Terca-feira" },
+    { value: "WEDNESDAY", label: "Quarta-feira" },
+    { value: "THURSDAY", label: "Quinta-feira" },
+    { value: "FRIDAY", label: "Sexta-feira" },
+    { value: "SATURDAY", label: "Sabado" },
+    { value: "SUNDAY", label: "Domingo" },
+];
+const weekdayByDayIndex = [
+    "SUNDAY",
+    "MONDAY",
+    "TUESDAY",
+    "WEDNESDAY",
+    "THURSDAY",
+    "FRIDAY",
+    "SATURDAY",
+];
 const route = ref(window.location.hash || "#/dashboard");
 const user = ref(null);
 const products = ref([]);
+const services = ref([]);
+const availability = ref([]);
+const appointments = ref([]);
 const analytics = ref([]);
 const company = ref(null);
 const publicProduct = ref(null);
@@ -17,6 +38,9 @@ const dashboardTab = ref("products");
 const selectedProductId = ref("");
 const relatedSelection = ref([]);
 const productSearch = ref("");
+const editingServiceId = ref("");
+const editingAvailabilityId = ref("");
+const selectedServiceId = ref("");
 const authForm = ref({
     name: "",
     email: "",
@@ -34,6 +58,26 @@ const productForm = ref({
     images: [],
     colorValues: "",
     sizeValues: "",
+});
+const serviceForm = ref({
+    name: "",
+    description: "",
+    duration: 60,
+    price: 0,
+    image: "",
+    active: true,
+});
+const availabilityForm = ref({
+    weekday: "MONDAY",
+    startTime: "09:00",
+    endTime: "18:00",
+    active: true,
+});
+const appointmentForm = ref({
+    date: "",
+    time: "",
+    customerName: "",
+    customerPhone: "",
 });
 const reservationForm = ref({
     customerName: "",
@@ -82,6 +126,52 @@ const filteredProducts = computed(() => {
 const totalClicks = computed(() => analytics.value.reduce((sum, item) => sum + item.clicks, 0));
 const totalReservations = computed(() => analytics.value.reduce((sum, item) => sum + item.reservations, 0));
 const monitoredProducts = computed(() => analytics.value.length);
+const selectedPublicService = computed(() => company.value?.services?.find((service) => service.id === selectedServiceId.value));
+const availableAppointmentTimes = computed(() => {
+    const service = selectedPublicService.value;
+    const date = appointmentForm.value.date;
+    if (!service || !date)
+        return [];
+    const weekday = weekdayByDayIndex[new Date(`${date}T12:00:00`).getDay()];
+    const blocks = company.value?.availability?.filter((item) => item.active && item.weekday === weekday) ?? [];
+    const times = new Set();
+    for (const block of blocks) {
+        const [startHour, startMinute] = block.startTime.split(":").map(Number);
+        const [endHour, endMinute] = block.endTime.split(":").map(Number);
+        let current = startHour * 60 + startMinute;
+        const end = endHour * 60 + endMinute;
+        while (current + service.duration <= end) {
+            const hour = Math.floor(current / 60).toString().padStart(2, "0");
+            const minute = (current % 60).toString().padStart(2, "0");
+            times.add(`${hour}:${minute}`);
+            current += service.duration;
+        }
+    }
+    return [...times].sort();
+});
+const todayAppointments = computed(() => {
+    const today = toLocalDateKey(new Date());
+    return appointments.value.filter((appointment) => toLocalDateKey(new Date(appointment.date)) === today);
+});
+const upcomingAppointments = computed(() => {
+    const today = toLocalDateKey(new Date());
+    return appointments.value.filter((appointment) => toLocalDateKey(new Date(appointment.date)) > today);
+});
+function toLocalDateKey(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+function formatAppointmentDate(value) {
+    return new Intl.DateTimeFormat("pt-BR", {
+        dateStyle: "short",
+        timeStyle: "short",
+    }).format(new Date(value));
+}
+function weekdayLabel(weekday) {
+    return weekdayOptions.find((item) => item.value === weekday)?.label ?? weekday;
+}
 function showError(message) {
     error.value = message;
     notice.value = "";
@@ -107,6 +197,9 @@ async function loadSession() {
             endereco: profile.endereco ?? "",
         };
         await loadProducts();
+        await loadServices();
+        await loadAvailability();
+        await loadAppointments();
     }
     catch {
         clearToken();
@@ -146,6 +239,21 @@ async function loadProducts() {
     if (!user.value)
         return;
     products.value = await api.listProducts();
+}
+async function loadServices() {
+    if (!user.value)
+        return;
+    services.value = await api.listServices();
+}
+async function loadAvailability() {
+    if (!user.value)
+        return;
+    availability.value = await api.listAvailability();
+}
+async function loadAppointments() {
+    if (!user.value)
+        return;
+    appointments.value = await api.listAppointments();
 }
 async function loadAnalytics() {
     if (!user.value)
@@ -305,6 +413,205 @@ async function createProduct() {
     }
     catch (err) {
         showError(err instanceof Error ? err.message : "Nao foi possivel criar o produto.");
+    }
+    finally {
+        loading.value = false;
+    }
+}
+function resetServiceForm() {
+    editingServiceId.value = "";
+    serviceForm.value = {
+        name: "",
+        description: "",
+        duration: 60,
+        price: 0,
+        image: "",
+        active: true,
+    };
+}
+function editService(service) {
+    editingServiceId.value = service.id;
+    serviceForm.value = {
+        name: service.name,
+        description: service.description ?? "",
+        duration: service.duration,
+        price: Number(service.price),
+        image: service.image ?? "",
+        active: service.active,
+    };
+}
+async function uploadServiceImage(event) {
+    const input = event.target;
+    const file = input.files?.[0];
+    if (!file)
+        return;
+    uploadingProductImages.value = true;
+    try {
+        const result = await api.uploadProductImages([file]);
+        serviceForm.value.image = result.urls[0] ?? "";
+        showNotice("Imagem do serviÃ§o enviada.");
+    }
+    catch (err) {
+        showError(err instanceof Error
+            ? err.message
+            : "Nao foi possivel enviar a imagem do servico.");
+    }
+    finally {
+        uploadingProductImages.value = false;
+        input.value = "";
+    }
+}
+async function saveService() {
+    loading.value = true;
+    try {
+        const input = {
+            name: serviceForm.value.name,
+            description: serviceForm.value.description,
+            duration: Number(serviceForm.value.duration),
+            price: Number(serviceForm.value.price),
+            image: serviceForm.value.image,
+            active: serviceForm.value.active,
+        };
+        if (editingServiceId.value) {
+            await api.updateService(editingServiceId.value, input);
+            showNotice("Servico atualizado.");
+        }
+        else {
+            await api.createService(input);
+            showNotice("Servico criado.");
+        }
+        resetServiceForm();
+        await loadServices();
+    }
+    catch (err) {
+        showError(err instanceof Error
+            ? err.message
+            : "Nao foi possivel salvar o servico.");
+    }
+    finally {
+        loading.value = false;
+    }
+}
+async function removeService(serviceId) {
+    loading.value = true;
+    try {
+        await api.deleteService(serviceId);
+        await loadServices();
+        showNotice("Servico excluido.");
+    }
+    catch (err) {
+        showError(err instanceof Error
+            ? err.message
+            : "Nao foi possivel excluir o servico.");
+    }
+    finally {
+        loading.value = false;
+    }
+}
+function resetAvailabilityForm() {
+    editingAvailabilityId.value = "";
+    availabilityForm.value = {
+        weekday: "MONDAY",
+        startTime: "09:00",
+        endTime: "18:00",
+        active: true,
+    };
+}
+function editAvailability(item) {
+    editingAvailabilityId.value = item.id;
+    availabilityForm.value = {
+        weekday: item.weekday,
+        startTime: item.startTime,
+        endTime: item.endTime,
+        active: item.active,
+    };
+}
+async function saveAvailability() {
+    loading.value = true;
+    try {
+        const input = { ...availabilityForm.value };
+        if (editingAvailabilityId.value) {
+            await api.updateAvailability(editingAvailabilityId.value, input);
+            showNotice("Disponibilidade atualizada.");
+        }
+        else {
+            await api.createAvailability(input);
+            showNotice("Disponibilidade criada.");
+        }
+        resetAvailabilityForm();
+        await loadAvailability();
+    }
+    catch (err) {
+        showError(err instanceof Error
+            ? err.message
+            : "Nao foi possivel salvar a disponibilidade.");
+    }
+    finally {
+        loading.value = false;
+    }
+}
+async function removeAvailability(id) {
+    loading.value = true;
+    try {
+        await api.deleteAvailability(id);
+        await loadAvailability();
+        showNotice("Disponibilidade excluida.");
+    }
+    catch (err) {
+        showError(err instanceof Error
+            ? err.message
+            : "Nao foi possivel excluir a disponibilidade.");
+    }
+    finally {
+        loading.value = false;
+    }
+}
+function selectServiceForAppointment(serviceId) {
+    selectedServiceId.value = serviceId;
+    appointmentForm.value.time = "";
+}
+async function createPublicAppointment() {
+    if (!company.value || !selectedServiceId.value)
+        return;
+    loading.value = true;
+    try {
+        const date = new Date(`${appointmentForm.value.date}T${appointmentForm.value.time}:00`);
+        const result = await api.createAppointment({
+            userId: company.value.id,
+            serviceId: selectedServiceId.value,
+            customerName: appointmentForm.value.customerName,
+            customerPhone: appointmentForm.value.customerPhone,
+            date: date.toISOString(),
+        });
+        showNotice("Agendamento criado.");
+        appointmentForm.value = {
+            date: "",
+            time: "",
+            customerName: "",
+            customerPhone: "",
+        };
+        window.open(result.whatsappUrl, "_blank", "noopener,noreferrer");
+    }
+    catch (err) {
+        showError(err instanceof Error
+            ? err.message
+            : "Nao foi possivel criar o agendamento.");
+    }
+    finally {
+        loading.value = false;
+    }
+}
+async function changeAppointmentStatus(id, status) {
+    loading.value = true;
+    try {
+        await api.updateAppointmentStatus(id, status);
+        await loadAppointments();
+        showNotice("Status do agendamento atualizado.");
+    }
+    catch (err) {
+        showError(err instanceof Error
+            ? err.message
+            : "Nao foi possivel atualizar o agendamento.");
     }
     finally {
         loading.value = false;
@@ -621,6 +928,62 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
         });
         /** @type {__VLS_StyleScopedClasses['sidebar-item']} */ ;
         /** @type {__VLS_StyleScopedClasses['active']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.nav, __VLS_intrinsics.nav)({
+            ...{ class: "sidebar-nav smart-agends-nav" },
+        });
+        /** @type {__VLS_StyleScopedClasses['sidebar-nav']} */ ;
+        /** @type {__VLS_StyleScopedClasses['smart-agends-nav']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+            ...{ onClick: (...[$event]) => {
+                    if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                        return;
+                    if (!(__VLS_ctx.user))
+                        return;
+                    __VLS_ctx.dashboardTab = 'services';
+                    __VLS_ctx.loadServices();
+                    // @ts-ignore
+                    [dashboardTab, dashboardTab, loadServices,];
+                } },
+            type: "button",
+            ...{ class: "sidebar-item" },
+            ...{ class: ({ active: __VLS_ctx.dashboardTab === 'services' }) },
+        });
+        /** @type {__VLS_StyleScopedClasses['sidebar-item']} */ ;
+        /** @type {__VLS_StyleScopedClasses['active']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+            ...{ onClick: (...[$event]) => {
+                    if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                        return;
+                    if (!(__VLS_ctx.user))
+                        return;
+                    __VLS_ctx.dashboardTab = 'availability';
+                    __VLS_ctx.loadAvailability();
+                    // @ts-ignore
+                    [dashboardTab, dashboardTab, loadAvailability,];
+                } },
+            type: "button",
+            ...{ class: "sidebar-item" },
+            ...{ class: ({ active: __VLS_ctx.dashboardTab === 'availability' }) },
+        });
+        /** @type {__VLS_StyleScopedClasses['sidebar-item']} */ ;
+        /** @type {__VLS_StyleScopedClasses['active']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+            ...{ onClick: (...[$event]) => {
+                    if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                        return;
+                    if (!(__VLS_ctx.user))
+                        return;
+                    __VLS_ctx.dashboardTab = 'agenda';
+                    __VLS_ctx.loadAppointments();
+                    // @ts-ignore
+                    [dashboardTab, dashboardTab, loadAppointments,];
+                } },
+            type: "button",
+            ...{ class: "sidebar-item" },
+            ...{ class: ({ active: __VLS_ctx.dashboardTab === 'agenda' }) },
+        });
+        /** @type {__VLS_StyleScopedClasses['sidebar-item']} */ ;
+        /** @type {__VLS_StyleScopedClasses['active']} */ ;
         __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
             ...{ class: "sidebar-footer" },
         });
@@ -658,7 +1021,13 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
             ? 'Produtos'
             : __VLS_ctx.dashboardTab === 'analytics'
                 ? 'Analytics'
-                : 'Minha Empresa');
+                : __VLS_ctx.dashboardTab === 'services'
+                    ? 'ServiÃ§os'
+                    : __VLS_ctx.dashboardTab === 'availability'
+                        ? 'Disponibilidade'
+                        : __VLS_ctx.dashboardTab === 'agenda'
+                            ? 'Agenda'
+                            : 'Minha Empresa');
         __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
             ...{ class: "dashboard-subtitle" },
         });
@@ -667,7 +1036,13 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
             ? 'Gerencie seu catálogo e publique novos produtos.'
             : __VLS_ctx.dashboardTab === 'analytics'
                 ? 'Acompanhe o desempenho dos seus produtos.'
-                : 'Gerencie as informações da sua empresa.');
+                : __VLS_ctx.dashboardTab === 'services'
+                    ? 'Gerencie os servicos oferecidos pela empresa.'
+                    : __VLS_ctx.dashboardTab === 'availability'
+                        ? 'Defina os dias e horarios de atendimento.'
+                        : __VLS_ctx.dashboardTab === 'agenda'
+                            ? 'Acompanhe e gerencie seus agendamentos.'
+                            : 'Gerencie as informações da sua empresa.');
         __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
             ...{ class: "dashboard-counter" },
         });
@@ -676,7 +1051,13 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
             ? `${__VLS_ctx.products.length} produtos`
             : __VLS_ctx.dashboardTab === 'analytics'
                 ? `${__VLS_ctx.monitoredProducts} produtos`
-                : 'Perfil');
+                : __VLS_ctx.dashboardTab === 'services'
+                    ? `${__VLS_ctx.services.length} serviÃ§os`
+                    : __VLS_ctx.dashboardTab === 'availability'
+                        ? `${__VLS_ctx.availability.length} horarios`
+                        : __VLS_ctx.dashboardTab === 'agenda'
+                            ? `${__VLS_ctx.appointments.length} agendamentos`
+                            : 'Perfil');
         if (__VLS_ctx.user && __VLS_ctx.dashboardTab === 'products') {
             __VLS_asFunctionalElement1(__VLS_intrinsics.form, __VLS_intrinsics.form)({
                 ...{ onSubmit: (__VLS_ctx.createProduct) },
@@ -740,7 +1121,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                                     return;
                                 __VLS_ctx.removeProductImage(index);
                                 // @ts-ignore
-                                [user, user, publicCompanyUrl, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, products, monitoredProducts, createProduct, productForm, productForm, productForm, productForm, productForm, productForm, uploadProductImages, uploadingProductImages, removeProductImage,];
+                                [user, user, publicCompanyUrl, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, products, monitoredProducts, services, availability, appointments, createProduct, productForm, productForm, productForm, productForm, productForm, productForm, uploadProductImages, uploadingProductImages, removeProductImage,];
                             } },
                         type: "button",
                         ...{ class: "product-image-remove" },
@@ -977,6 +1358,502 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                 __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({
                     colspan: "3",
                 });
+            }
+        }
+        if (__VLS_ctx.dashboardTab === 'services') {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "services-dashboard" },
+            });
+            /** @type {__VLS_StyleScopedClasses['services-dashboard']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.form, __VLS_intrinsics.form)({
+                ...{ onSubmit: (__VLS_ctx.saveService) },
+                ...{ class: "product-form" },
+            });
+            /** @type {__VLS_StyleScopedClasses['product-form']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+                required: true,
+                placeholder: "Nome do serviÃ§o",
+            });
+            (__VLS_ctx.serviceForm.name);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+                required: true,
+                type: "number",
+                min: "1",
+                placeholder: "DuraÃ§Ã£o em minutos",
+            });
+            (__VLS_ctx.serviceForm.duration);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+                required: true,
+                type: "number",
+                min: "0",
+                step: "0.01",
+                placeholder: "PreÃ§o",
+            });
+            (__VLS_ctx.serviceForm.price);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                ...{ class: "service-active-toggle" },
+            });
+            /** @type {__VLS_StyleScopedClasses['service-active-toggle']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+                type: "checkbox",
+            });
+            (__VLS_ctx.serviceForm.active);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                ...{ class: "logo-upload product-image-upload" },
+            });
+            /** @type {__VLS_StyleScopedClasses['logo-upload']} */ ;
+            /** @type {__VLS_StyleScopedClasses['product-image-upload']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+                ...{ onChange: (__VLS_ctx.uploadServiceImage) },
+                type: "file",
+                accept: ".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp",
+                disabled: (__VLS_ctx.uploadingProductImages),
+            });
+            if (__VLS_ctx.serviceForm.image) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                    ...{ class: "product-image-preview-grid" },
+                });
+                /** @type {__VLS_StyleScopedClasses['product-image-preview-grid']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                    ...{ class: "product-image-preview" },
+                });
+                /** @type {__VLS_StyleScopedClasses['product-image-preview']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.img)({
+                    src: (__VLS_ctx.serviceForm.image),
+                    alt: "",
+                });
+                __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                    ...{ onClick: (...[$event]) => {
+                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                                return;
+                            if (!(__VLS_ctx.user))
+                                return;
+                            if (!(__VLS_ctx.dashboardTab === 'services'))
+                                return;
+                            if (!(__VLS_ctx.serviceForm.image))
+                                return;
+                            __VLS_ctx.serviceForm.image = '';
+                            // @ts-ignore
+                            [dashboardTab, uploadingProductImages, analytics, saveService, serviceForm, serviceForm, serviceForm, serviceForm, serviceForm, serviceForm, serviceForm, uploadServiceImage,];
+                        } },
+                    type: "button",
+                    ...{ class: "product-image-remove" },
+                });
+                /** @type {__VLS_StyleScopedClasses['product-image-remove']} */ ;
+            }
+            __VLS_asFunctionalElement1(__VLS_intrinsics.textarea)({
+                value: (__VLS_ctx.serviceForm.description),
+                placeholder: "DescriÃ§Ã£o",
+            });
+            __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                ...{ class: "primary-button" },
+                type: "submit",
+                disabled: (__VLS_ctx.loading),
+            });
+            /** @type {__VLS_StyleScopedClasses['primary-button']} */ ;
+            (__VLS_ctx.editingServiceId ? 'Salvar serviÃ§o' : 'Criar serviÃ§o');
+            if (__VLS_ctx.editingServiceId) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                    ...{ onClick: (__VLS_ctx.resetServiceForm) },
+                    ...{ class: "ghost-button" },
+                    type: "button",
+                });
+                /** @type {__VLS_StyleScopedClasses['ghost-button']} */ ;
+            }
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "service-list" },
+            });
+            /** @type {__VLS_StyleScopedClasses['service-list']} */ ;
+            for (const [service] of __VLS_vFor((__VLS_ctx.services))) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
+                    key: (service.id),
+                    ...{ class: "service-card" },
+                });
+                /** @type {__VLS_StyleScopedClasses['service-card']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+                if (service.image) {
+                    __VLS_asFunctionalElement1(__VLS_intrinsics.img)({
+                        ...{ class: "service-card-image" },
+                        src: (service.image),
+                        alt: "",
+                    });
+                    /** @type {__VLS_StyleScopedClasses['service-card-image']} */ ;
+                }
+                __VLS_asFunctionalElement1(__VLS_intrinsics.h3, __VLS_intrinsics.h3)({});
+                (service.name);
+                __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+                (service.description);
+                __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+                (service.duration);
+                (__VLS_ctx.formatCurrency(service.price));
+                __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({
+                    ...{ class: ({
+                            inactive: !service.active
+                        }) },
+                });
+                /** @type {__VLS_StyleScopedClasses['inactive']} */ ;
+                (service.active ? 'Ativo' : 'Inativo');
+                __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                    ...{ class: "product-actions" },
+                });
+                /** @type {__VLS_StyleScopedClasses['product-actions']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                    ...{ onClick: (...[$event]) => {
+                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                                return;
+                            if (!(__VLS_ctx.user))
+                                return;
+                            if (!(__VLS_ctx.dashboardTab === 'services'))
+                                return;
+                            __VLS_ctx.editService(service);
+                            // @ts-ignore
+                            [loading, services, formatCurrency, serviceForm, editingServiceId, editingServiceId, resetServiceForm, editService,];
+                        } },
+                    type: "button",
+                    ...{ class: "ghost-button" },
+                });
+                /** @type {__VLS_StyleScopedClasses['ghost-button']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                    ...{ onClick: (...[$event]) => {
+                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                                return;
+                            if (!(__VLS_ctx.user))
+                                return;
+                            if (!(__VLS_ctx.dashboardTab === 'services'))
+                                return;
+                            __VLS_ctx.removeService(service.id);
+                            // @ts-ignore
+                            [removeService,];
+                        } },
+                    type: "button",
+                    ...{ class: "ghost-button" },
+                });
+                /** @type {__VLS_StyleScopedClasses['ghost-button']} */ ;
+                // @ts-ignore
+                [];
+            }
+            if (!__VLS_ctx.services.length) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+                    ...{ class: "muted" },
+                });
+                /** @type {__VLS_StyleScopedClasses['muted']} */ ;
+            }
+        }
+        if (__VLS_ctx.dashboardTab === 'availability') {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "availability-dashboard" },
+            });
+            /** @type {__VLS_StyleScopedClasses['availability-dashboard']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.form, __VLS_intrinsics.form)({
+                ...{ onSubmit: (__VLS_ctx.saveAvailability) },
+                ...{ class: "availability-form" },
+            });
+            /** @type {__VLS_StyleScopedClasses['availability-form']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.select, __VLS_intrinsics.select)({
+                value: (__VLS_ctx.availabilityForm.weekday),
+            });
+            for (const [weekday] of __VLS_vFor((__VLS_ctx.weekdayOptions))) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+                    key: (weekday.value),
+                    value: (weekday.value),
+                });
+                (weekday.label);
+                // @ts-ignore
+                [dashboardTab, services, saveAvailability, availabilityForm, weekdayOptions,];
+            }
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+                required: true,
+                type: "time",
+            });
+            (__VLS_ctx.availabilityForm.startTime);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+                required: true,
+                type: "time",
+            });
+            (__VLS_ctx.availabilityForm.endTime);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                ...{ class: "service-active-toggle" },
+            });
+            /** @type {__VLS_StyleScopedClasses['service-active-toggle']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+                type: "checkbox",
+            });
+            (__VLS_ctx.availabilityForm.active);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                ...{ class: "primary-button" },
+                type: "submit",
+                disabled: (__VLS_ctx.loading),
+            });
+            /** @type {__VLS_StyleScopedClasses['primary-button']} */ ;
+            (__VLS_ctx.editingAvailabilityId ? 'Salvar horario' : 'Adicionar horario');
+            if (__VLS_ctx.editingAvailabilityId) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                    ...{ onClick: (__VLS_ctx.resetAvailabilityForm) },
+                    ...{ class: "ghost-button" },
+                    type: "button",
+                });
+                /** @type {__VLS_StyleScopedClasses['ghost-button']} */ ;
+            }
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "availability-list" },
+            });
+            /** @type {__VLS_StyleScopedClasses['availability-list']} */ ;
+            for (const [item] of __VLS_vFor((__VLS_ctx.availability))) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
+                    key: (item.id),
+                    ...{ class: "availability-card" },
+                });
+                /** @type {__VLS_StyleScopedClasses['availability-card']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+                __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+                (__VLS_ctx.weekdayLabel(item.weekday));
+                __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+                (item.startTime);
+                (item.endTime);
+                __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                    ...{ class: ({ inactive: !item.active }) },
+                });
+                /** @type {__VLS_StyleScopedClasses['inactive']} */ ;
+                (item.active ? 'Ativo' : 'Inativo');
+                __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                    ...{ class: "product-actions" },
+                });
+                /** @type {__VLS_StyleScopedClasses['product-actions']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                    ...{ onClick: (...[$event]) => {
+                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                                return;
+                            if (!(__VLS_ctx.user))
+                                return;
+                            if (!(__VLS_ctx.dashboardTab === 'availability'))
+                                return;
+                            __VLS_ctx.editAvailability(item);
+                            // @ts-ignore
+                            [loading, availability, availabilityForm, availabilityForm, availabilityForm, editingAvailabilityId, editingAvailabilityId, resetAvailabilityForm, weekdayLabel, editAvailability,];
+                        } },
+                    type: "button",
+                    ...{ class: "ghost-button" },
+                });
+                /** @type {__VLS_StyleScopedClasses['ghost-button']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                    ...{ onClick: (...[$event]) => {
+                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                                return;
+                            if (!(__VLS_ctx.user))
+                                return;
+                            if (!(__VLS_ctx.dashboardTab === 'availability'))
+                                return;
+                            __VLS_ctx.removeAvailability(item.id);
+                            // @ts-ignore
+                            [removeAvailability,];
+                        } },
+                    type: "button",
+                    ...{ class: "ghost-button" },
+                });
+                /** @type {__VLS_StyleScopedClasses['ghost-button']} */ ;
+                // @ts-ignore
+                [];
+            }
+            if (!__VLS_ctx.availability.length) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+                    ...{ class: "muted" },
+                });
+                /** @type {__VLS_StyleScopedClasses['muted']} */ ;
+            }
+        }
+        if (__VLS_ctx.dashboardTab === 'agenda') {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "agenda-dashboard" },
+            });
+            /** @type {__VLS_StyleScopedClasses['agenda-dashboard']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+                ...{ class: "agenda-group" },
+            });
+            /** @type {__VLS_StyleScopedClasses['agenda-group']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
+            for (const [appointment] of __VLS_vFor((__VLS_ctx.todayAppointments))) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
+                    key: (appointment.id),
+                    ...{ class: "appointment-card" },
+                });
+                /** @type {__VLS_StyleScopedClasses['appointment-card']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+                __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+                (appointment.service.name);
+                __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+                (appointment.customerName);
+                (appointment.customerPhone);
+                __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+                (__VLS_ctx.formatAppointmentDate(appointment.date));
+                __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                    ...{ class: "appointment-status" },
+                });
+                /** @type {__VLS_StyleScopedClasses['appointment-status']} */ ;
+                (appointment.status);
+                __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                    ...{ class: "product-actions" },
+                });
+                /** @type {__VLS_StyleScopedClasses['product-actions']} */ ;
+                if (!['CONFIRMED', 'COMPLETED', 'CANCELED'].includes(appointment.status)) {
+                    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                        ...{ onClick: (...[$event]) => {
+                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                                    return;
+                                if (!(__VLS_ctx.user))
+                                    return;
+                                if (!(__VLS_ctx.dashboardTab === 'agenda'))
+                                    return;
+                                if (!(!['CONFIRMED', 'COMPLETED', 'CANCELED'].includes(appointment.status)))
+                                    return;
+                                __VLS_ctx.changeAppointmentStatus(appointment.id, 'CONFIRMED');
+                                // @ts-ignore
+                                [dashboardTab, availability, todayAppointments, formatAppointmentDate, changeAppointmentStatus,];
+                            } },
+                        type: "button",
+                    });
+                }
+                if (!['COMPLETED', 'CANCELED'].includes(appointment.status)) {
+                    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                        ...{ onClick: (...[$event]) => {
+                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                                    return;
+                                if (!(__VLS_ctx.user))
+                                    return;
+                                if (!(__VLS_ctx.dashboardTab === 'agenda'))
+                                    return;
+                                if (!(!['COMPLETED', 'CANCELED'].includes(appointment.status)))
+                                    return;
+                                __VLS_ctx.changeAppointmentStatus(appointment.id, 'COMPLETED');
+                                // @ts-ignore
+                                [changeAppointmentStatus,];
+                            } },
+                        type: "button",
+                    });
+                }
+                if (!['COMPLETED', 'CANCELED'].includes(appointment.status)) {
+                    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                        ...{ onClick: (...[$event]) => {
+                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                                    return;
+                                if (!(__VLS_ctx.user))
+                                    return;
+                                if (!(__VLS_ctx.dashboardTab === 'agenda'))
+                                    return;
+                                if (!(!['COMPLETED', 'CANCELED'].includes(appointment.status)))
+                                    return;
+                                __VLS_ctx.changeAppointmentStatus(appointment.id, 'CANCELED');
+                                // @ts-ignore
+                                [changeAppointmentStatus,];
+                            } },
+                        type: "button",
+                    });
+                }
+                // @ts-ignore
+                [];
+            }
+            if (!__VLS_ctx.todayAppointments.length) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+                    ...{ class: "muted" },
+                });
+                /** @type {__VLS_StyleScopedClasses['muted']} */ ;
+            }
+            __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+                ...{ class: "agenda-group" },
+            });
+            /** @type {__VLS_StyleScopedClasses['agenda-group']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
+            for (const [appointment] of __VLS_vFor((__VLS_ctx.upcomingAppointments))) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
+                    key: (appointment.id),
+                    ...{ class: "appointment-card" },
+                });
+                /** @type {__VLS_StyleScopedClasses['appointment-card']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+                __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+                (appointment.service.name);
+                __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+                (appointment.customerName);
+                (appointment.customerPhone);
+                __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+                (__VLS_ctx.formatAppointmentDate(appointment.date));
+                __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                    ...{ class: "appointment-status" },
+                });
+                /** @type {__VLS_StyleScopedClasses['appointment-status']} */ ;
+                (appointment.status);
+                __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                    ...{ class: "product-actions" },
+                });
+                /** @type {__VLS_StyleScopedClasses['product-actions']} */ ;
+                if (!['CONFIRMED', 'COMPLETED', 'CANCELED'].includes(appointment.status)) {
+                    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                        ...{ onClick: (...[$event]) => {
+                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                                    return;
+                                if (!(__VLS_ctx.user))
+                                    return;
+                                if (!(__VLS_ctx.dashboardTab === 'agenda'))
+                                    return;
+                                if (!(!['CONFIRMED', 'COMPLETED', 'CANCELED'].includes(appointment.status)))
+                                    return;
+                                __VLS_ctx.changeAppointmentStatus(appointment.id, 'CONFIRMED');
+                                // @ts-ignore
+                                [todayAppointments, formatAppointmentDate, changeAppointmentStatus, upcomingAppointments,];
+                            } },
+                        type: "button",
+                    });
+                }
+                if (!['COMPLETED', 'CANCELED'].includes(appointment.status)) {
+                    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                        ...{ onClick: (...[$event]) => {
+                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                                    return;
+                                if (!(__VLS_ctx.user))
+                                    return;
+                                if (!(__VLS_ctx.dashboardTab === 'agenda'))
+                                    return;
+                                if (!(!['COMPLETED', 'CANCELED'].includes(appointment.status)))
+                                    return;
+                                __VLS_ctx.changeAppointmentStatus(appointment.id, 'COMPLETED');
+                                // @ts-ignore
+                                [changeAppointmentStatus,];
+                            } },
+                        type: "button",
+                    });
+                }
+                if (!['COMPLETED', 'CANCELED'].includes(appointment.status)) {
+                    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                        ...{ onClick: (...[$event]) => {
+                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                                    return;
+                                if (!(__VLS_ctx.user))
+                                    return;
+                                if (!(__VLS_ctx.dashboardTab === 'agenda'))
+                                    return;
+                                if (!(!['COMPLETED', 'CANCELED'].includes(appointment.status)))
+                                    return;
+                                __VLS_ctx.changeAppointmentStatus(appointment.id, 'CANCELED');
+                                // @ts-ignore
+                                [changeAppointmentStatus,];
+                            } },
+                        type: "button",
+                    });
+                }
+                // @ts-ignore
+                [];
+            }
+            if (!__VLS_ctx.upcomingAppointments.length) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+                    ...{ class: "muted" },
+                });
+                /** @type {__VLS_StyleScopedClasses['muted']} */ ;
             }
         }
         if (__VLS_ctx.dashboardTab === 'company') {
@@ -1230,7 +2107,137 @@ if (__VLS_ctx.currentView === 'company' && __VLS_ctx.company) {
         });
         /** @type {__VLS_StyleScopedClasses['public-card-link']} */ ;
         // @ts-ignore
-        [currentView, loading, dashboardTab, formatCurrency, analytics, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, saveCompany, uploadCompanyLogo, uploadingLogo, uploadingLogo, uploadCompanyHero, company, company, company, company, company, company, company, company, company, company, company, company, productSearch, filteredProducts,];
+        [currentView, loading, dashboardTab, formatCurrency, upcomingAppointments, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, saveCompany, uploadCompanyLogo, uploadingLogo, uploadingLogo, uploadCompanyHero, company, company, company, company, company, company, company, company, company, company, company, company, productSearch, filteredProducts,];
+    }
+    if (__VLS_ctx.company.services?.length) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+            ...{ class: "public-services" },
+        });
+        /** @type {__VLS_StyleScopedClasses['public-services']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+            ...{ class: "related-products-header" },
+        });
+        /** @type {__VLS_StyleScopedClasses['related-products-header']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
+        __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+            ...{ class: "muted" },
+        });
+        /** @type {__VLS_StyleScopedClasses['muted']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+            ...{ class: "service-public-grid" },
+        });
+        /** @type {__VLS_StyleScopedClasses['service-public-grid']} */ ;
+        for (const [service] of __VLS_vFor((__VLS_ctx.company.services))) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
+                key: (service.id),
+                ...{ class: "service-public-card" },
+            });
+            /** @type {__VLS_StyleScopedClasses['service-public-card']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.h3, __VLS_intrinsics.h3)({});
+            (service.name);
+            if (service.image) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.img)({
+                    src: (service.image),
+                    alt: "",
+                });
+            }
+            __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+            (service.description);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            (service.duration);
+            (__VLS_ctx.formatCurrency(service.price));
+            __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                ...{ onClick: (...[$event]) => {
+                        if (!(__VLS_ctx.currentView === 'company' && __VLS_ctx.company))
+                            return;
+                        if (!(__VLS_ctx.company.services?.length))
+                            return;
+                        __VLS_ctx.selectServiceForAppointment(service.id);
+                        // @ts-ignore
+                        [formatCurrency, company, company, selectServiceForAppointment,];
+                    } },
+                ...{ class: "primary-button" },
+                type: "button",
+            });
+            /** @type {__VLS_StyleScopedClasses['primary-button']} */ ;
+            // @ts-ignore
+            [];
+        }
+        if (__VLS_ctx.selectedPublicService) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.form, __VLS_intrinsics.form)({
+                ...{ onSubmit: (__VLS_ctx.createPublicAppointment) },
+                ...{ class: "public-appointment-form" },
+            });
+            /** @type {__VLS_StyleScopedClasses['public-appointment-form']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+                ...{ class: "eyebrow" },
+            });
+            /** @type {__VLS_StyleScopedClasses['eyebrow']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.h3, __VLS_intrinsics.h3)({});
+            (__VLS_ctx.selectedPublicService.name);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+                ...{ onChange: (...[$event]) => {
+                        if (!(__VLS_ctx.currentView === 'company' && __VLS_ctx.company))
+                            return;
+                        if (!(__VLS_ctx.company.services?.length))
+                            return;
+                        if (!(__VLS_ctx.selectedPublicService))
+                            return;
+                        __VLS_ctx.appointmentForm.time = '';
+                        // @ts-ignore
+                        [selectedPublicService, selectedPublicService, createPublicAppointment, appointmentForm,];
+                    } },
+                required: true,
+                type: "date",
+                min: (__VLS_ctx.toLocalDateKey(new Date())),
+            });
+            (__VLS_ctx.appointmentForm.date);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.select, __VLS_intrinsics.select)({
+                value: (__VLS_ctx.appointmentForm.time),
+                required: true,
+                disabled: (!__VLS_ctx.availableAppointmentTimes.length),
+            });
+            __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+                value: "",
+                disabled: true,
+            });
+            for (const [time] of __VLS_vFor((__VLS_ctx.availableAppointmentTimes))) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.option, __VLS_intrinsics.option)({
+                    key: (time),
+                    value: (time),
+                });
+                (time);
+                // @ts-ignore
+                [appointmentForm, appointmentForm, toLocalDateKey, availableAppointmentTimes, availableAppointmentTimes,];
+            }
+            __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+                required: true,
+                placeholder: "Seu nome",
+            });
+            (__VLS_ctx.appointmentForm.customerName);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+                required: true,
+                placeholder: "Seu WhatsApp",
+            });
+            (__VLS_ctx.appointmentForm.customerPhone);
+            if (__VLS_ctx.appointmentForm.date && !__VLS_ctx.availableAppointmentTimes.length) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+                    ...{ class: "muted" },
+                });
+                /** @type {__VLS_StyleScopedClasses['muted']} */ ;
+            }
+            __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                ...{ class: "primary-button" },
+                type: "submit",
+                disabled: (__VLS_ctx.loading || !__VLS_ctx.appointmentForm.time),
+            });
+            /** @type {__VLS_StyleScopedClasses['primary-button']} */ ;
+        }
     }
 }
 if (__VLS_ctx.currentView === 'product' && __VLS_ctx.publicProduct) {
@@ -1258,7 +2265,7 @@ if (__VLS_ctx.currentView === 'product' && __VLS_ctx.publicProduct) {
                 alt: "",
             });
             // @ts-ignore
-            [currentView, publicProduct, publicProduct, publicProduct, publicProduct, publicProduct,];
+            [currentView, loading, appointmentForm, appointmentForm, appointmentForm, appointmentForm, availableAppointmentTimes, publicProduct, publicProduct, publicProduct, publicProduct, publicProduct,];
         }
     }
     __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({

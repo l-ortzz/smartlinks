@@ -5,3 +5,9 @@ export type CreateAppointmentInput = {
   customerPhone: string;
   date: string;
 };
+
+export type AppointmentStatus =
+  | "SCHEDULED"
+  | "CONFIRMED"
+  | "COMPLETED"
+  | "CANCELED";

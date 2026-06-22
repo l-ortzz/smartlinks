@@ -4,5 +4,8 @@ export type CreateServiceInput = {
   description?: string;
   duration: number;
   price: number;
+  image?: string;
   active?: boolean;
 };
+
+export type UpdateServiceInput = Partial<CreateServiceInput>;

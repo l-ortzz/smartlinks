@@ -1,5 +1,13 @@
-import { findAppointments, insertAppointment } from "../repositories/appointments.repository.ts";
-import type { CreateAppointmentInput } from "../types/appointments.ts";
+import {
+  findAppointments,
+  findServiceForAppointment,
+  insertAppointment,
+  updateAppointmentStatusById,
+} from "../repositories/appointments.repository.ts";
+import type {
+  AppointmentStatus,
+  CreateAppointmentInput,
+} from "../types/appointments.ts";
 import { buildWhatsAppUrl } from "../utils/whatsapp.ts";
 
 export async function listAppointmentsService(userId?: string) {
@@ -11,6 +19,16 @@ export async function createAppointmentService(input: CreateAppointmentInput) {
 
   if (Number.isNaN(appointmentDate.getTime())) {
     throw new Error("Invalid appointment date.");
+  }
+
+  if (appointmentDate.getTime() <= Date.now()) {
+    throw new Error("Appointment date must be in the future.");
+  }
+
+  const service = await findServiceForAppointment(input.serviceId);
+
+  if (!service || !service.active || service.userId !== input.userId) {
+    throw new Error("Service is not available for appointments.");
   }
 
   const appointment = await insertAppointment(input);
@@ -29,4 +47,12 @@ export async function createAppointmentService(input: CreateAppointmentInput) {
       message,
     }),
   };
+}
+
+export async function updateAppointmentStatusService(
+  id: string,
+  userId: string,
+  status: AppointmentStatus,
+) {
+  return updateAppointmentStatusById(id, userId, status);
 }

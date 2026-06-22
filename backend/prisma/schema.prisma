@@ -213,6 +213,7 @@ model Service {
   description  String?
   duration     Int
   price        Decimal
+  image        String?
   active       Boolean       @default(true)
   appointments Appointment[]
   user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)

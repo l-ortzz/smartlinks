@@ -27,6 +27,9 @@ async function request(path, options = {}) {
         const error = await response.json().catch(() => ({ message: "Request failed." }));
         throw new Error(error.message ?? "Request failed.");
     }
+    if (response.status === 204) {
+        return undefined;
+    }
     return response.json();
 }
 export const api = {
@@ -77,6 +80,61 @@ export const api = {
     },
     getAnalytics() {
         return request("/analytics/products");
+    },
+    listServices() {
+        return request("/services");
+    },
+    createService(input) {
+        return request("/services", {
+            method: "POST",
+            body: JSON.stringify(input),
+        });
+    },
+    updateService(id, input) {
+        return request(`/services/${id}`, {
+            method: "PUT",
+            body: JSON.stringify(input),
+        });
+    },
+    deleteService(id) {
+        return request(`/services/${id}`, {
+            method: "DELETE",
+        });
+    },
+    listAvailability() {
+        return request("/availability");
+    },
+    createAvailability(input) {
+        return request("/availability", {
+            method: "POST",
+            body: JSON.stringify(input),
+        });
+    },
+    updateAvailability(id, input) {
+        return request(`/availability/${id}`, {
+            method: "PUT",
+            body: JSON.stringify(input),
+        });
+    },
+    deleteAvailability(id) {
+        return request(`/availability/${id}`, {
+            method: "DELETE",
+        });
+    },
+    listAppointments() {
+        return request("/appointments");
+    },
+    createAppointment(input) {
+        return request("/appointments", {
+            method: "POST",
+            body: JSON.stringify(input),
+        });
+    },
+    updateAppointmentStatus(id, status) {
+        return request(`/appointments/${id}/status`, {
+            method: "PUT",
+            body: JSON.stringify({ status }),
+        });
     },
     createProduct(input) {
         return request("/products", {

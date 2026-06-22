@@ -20,3 +20,16 @@ export const createAppointmentSchema = {
     },
   },
 };
+
+export const updateAppointmentStatusSchema = {
+  body: {
+    type: "object",
+    required: ["status"],
+    properties: {
+      status: {
+        type: "string",
+        enum: ["SCHEDULED", "CONFIRMED", "COMPLETED", "CANCELED"],
+      },
+    },
+  },
+};

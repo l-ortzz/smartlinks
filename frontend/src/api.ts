@@ -36,6 +36,16 @@ export type Product = {
   attributes?: ProductAttribute[];
 };
 
+export type Service = {
+  id: string;
+  name: string;
+  description?: string | null;
+  duration: number;
+  price: string | number;
+  image?: string | null;
+  active: boolean;
+};
+
 export type CompanyPage = {
   id: string;
   name: string;
@@ -48,6 +58,8 @@ export type CompanyPage = {
   telefone?: string | null;
   endereco?: string | null;
   products: Product[];
+  services?: Service[];
+  availability?: Availability[];
 };
 
 export type UpdateCompanyInput = {
@@ -94,6 +106,49 @@ export type ReservationInput = {
   quantity: number;
 };
 
+export type ServiceInput = {
+  name: string;
+  description?: string;
+  duration: number;
+  price: number;
+  image?: string;
+  active?: boolean;
+};
+
+export type Weekday =
+  | "MONDAY"
+  | "TUESDAY"
+  | "WEDNESDAY"
+  | "THURSDAY"
+  | "FRIDAY"
+  | "SATURDAY"
+  | "SUNDAY";
+
+export type Availability = {
+  id: string;
+  weekday: Weekday;
+  startTime: string;
+  endTime: string;
+  active: boolean;
+};
+
+export type AvailabilityInput = Omit<Availability, "id">;
+
+export type AppointmentStatus =
+  | "SCHEDULED"
+  | "CONFIRMED"
+  | "COMPLETED"
+  | "CANCELED";
+
+export type Appointment = {
+  id: string;
+  customerName: string;
+  customerPhone: string;
+  date: string;
+  status: AppointmentStatus;
+  service: Service;
+};
+
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -128,6 +183,10 @@ async function request<T>(path: string, options: RequestInit = {}) {
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: "Request failed." }));
     throw new Error(error.message ?? "Request failed.");
+  }
+
+  if (response.status === 204) {
+    return undefined as T;
   }
 
   return response.json() as Promise<T>;
@@ -200,6 +259,81 @@ export const api = {
   getAnalytics() {
   return request<ProductAnalytics[]>("/analytics/products");
 },
+
+  listServices() {
+    return request<Service[]>("/services");
+  },
+
+  createService(input: ServiceInput) {
+    return request<Service>("/services", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  updateService(id: string, input: Partial<ServiceInput>) {
+    return request<Service>(`/services/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
+  },
+
+  deleteService(id: string) {
+    return request<void>(`/services/${id}`, {
+      method: "DELETE",
+    });
+  },
+
+  listAvailability() {
+    return request<Availability[]>("/availability");
+  },
+
+  createAvailability(input: AvailabilityInput) {
+    return request<Availability>("/availability", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  updateAvailability(id: string, input: Partial<AvailabilityInput>) {
+    return request<Availability>(`/availability/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
+  },
+
+  deleteAvailability(id: string) {
+    return request<void>(`/availability/${id}`, {
+      method: "DELETE",
+    });
+  },
+
+  listAppointments() {
+    return request<Appointment[]>("/appointments");
+  },
+
+  createAppointment(input: {
+    userId: string;
+    serviceId: string;
+    customerName: string;
+    customerPhone: string;
+    date: string;
+  }) {
+    return request<{
+      appointment: Appointment;
+      whatsappUrl: string;
+    }>("/appointments", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  updateAppointmentStatus(id: string, status: AppointmentStatus) {
+    return request<Appointment>(`/appointments/${id}/status`, {
+      method: "PUT",
+      body: JSON.stringify({ status }),
+    });
+  },
 
   createProduct(input: CreateProductInput) {
     return request<Product>("/products", {

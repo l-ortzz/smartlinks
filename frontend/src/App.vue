@@ -1,14 +1,37 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { api, clearToken, getToken, setToken, type CompanyPage, type ProductAnalytics, type Product, type PublicProduct, type SessionUser } from "./api";
+import { api, clearToken, getToken, setToken, type Appointment, type AppointmentStatus, type Availability, type CompanyPage, type ProductAnalytics, type Product, type PublicProduct, type Service, type SessionUser, type Weekday } from "./api";
 import { formatCurrency, slugify } from "./format";
 
 
 type View = "dashboard" | "company" | "product";
 
+const weekdayOptions: Array<{ value: Weekday; label: string }> = [
+  { value: "MONDAY", label: "Segunda-feira" },
+  { value: "TUESDAY", label: "Terca-feira" },
+  { value: "WEDNESDAY", label: "Quarta-feira" },
+  { value: "THURSDAY", label: "Quinta-feira" },
+  { value: "FRIDAY", label: "Sexta-feira" },
+  { value: "SATURDAY", label: "Sabado" },
+  { value: "SUNDAY", label: "Domingo" },
+];
+
+const weekdayByDayIndex: Weekday[] = [
+  "SUNDAY",
+  "MONDAY",
+  "TUESDAY",
+  "WEDNESDAY",
+  "THURSDAY",
+  "FRIDAY",
+  "SATURDAY",
+];
+
 const route = ref(window.location.hash || "#/dashboard");
 const user = ref<SessionUser | null>(null);
 const products = ref<Product[]>([]);
+const services = ref<Service[]>([]);
+const availability = ref<Availability[]>([]);
+const appointments = ref<Appointment[]>([]);
 const analytics = ref<ProductAnalytics[]>([]);
 const company = ref<CompanyPage | null>(null);
 const publicProduct = ref<PublicProduct | null>(null);
@@ -18,10 +41,13 @@ const uploadingProductImages = ref(false);
 const error = ref("");
 const notice = ref("");
 const authMode = ref<"login" | "register">("login");
-const dashboardTab = ref<  "products"  | "company"  | "analytics">("products");
+const dashboardTab = ref<"products" | "company" | "analytics" | "services" | "availability" | "agenda">("products");
 const selectedProductId = ref("");
 const relatedSelection = ref<string[]>([]);
 const productSearch = ref("");
+const editingServiceId = ref("");
+const editingAvailabilityId = ref("");
+const selectedServiceId = ref("");
 
 const authForm = ref({
   name: "",
@@ -41,6 +67,29 @@ const productForm = ref({
   images: [] as string[],
   colorValues: "",
   sizeValues: "",
+});
+
+const serviceForm = ref({
+  name: "",
+  description: "",
+  duration: 60,
+  price: 0,
+  image: "",
+  active: true,
+});
+
+const availabilityForm = ref({
+  weekday: "MONDAY" as Weekday,
+  startTime: "09:00",
+  endTime: "18:00",
+  active: true,
+});
+
+const appointmentForm = ref({
+  date: "",
+  time: "",
+  customerName: "",
+  customerPhone: "",
 });
 
 const reservationForm = ref({
@@ -114,6 +163,73 @@ const monitoredProducts = computed(
   () => analytics.value.length,
 );
 
+const selectedPublicService = computed(() =>
+  company.value?.services?.find(
+    (service) => service.id === selectedServiceId.value,
+  ),
+);
+
+const availableAppointmentTimes = computed(() => {
+  const service = selectedPublicService.value;
+  const date = appointmentForm.value.date;
+
+  if (!service || !date) return [];
+
+  const weekday = weekdayByDayIndex[new Date(`${date}T12:00:00`).getDay()];
+  const blocks = company.value?.availability?.filter(
+    (item) => item.active && item.weekday === weekday,
+  ) ?? [];
+  const times = new Set<string>();
+
+  for (const block of blocks) {
+    const [startHour, startMinute] = block.startTime.split(":").map(Number);
+    const [endHour, endMinute] = block.endTime.split(":").map(Number);
+    let current = startHour * 60 + startMinute;
+    const end = endHour * 60 + endMinute;
+
+    while (current + service.duration <= end) {
+      const hour = Math.floor(current / 60).toString().padStart(2, "0");
+      const minute = (current % 60).toString().padStart(2, "0");
+      times.add(`${hour}:${minute}`);
+      current += service.duration;
+    }
+  }
+
+  return [...times].sort();
+});
+
+const todayAppointments = computed(() => {
+  const today = toLocalDateKey(new Date());
+  return appointments.value.filter(
+    (appointment) => toLocalDateKey(new Date(appointment.date)) === today,
+  );
+});
+
+const upcomingAppointments = computed(() => {
+  const today = toLocalDateKey(new Date());
+  return appointments.value.filter(
+    (appointment) => toLocalDateKey(new Date(appointment.date)) > today,
+  );
+});
+
+function toLocalDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatAppointmentDate(value: string) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function weekdayLabel(weekday: Weekday) {
+  return weekdayOptions.find((item) => item.value === weekday)?.label ?? weekday;
+}
+
 function showError(message: string) {
   error.value = message;
   notice.value = "";
@@ -144,6 +260,9 @@ async function loadSession() {
     };
 
     await loadProducts();
+    await loadServices();
+    await loadAvailability();
+    await loadAppointments();
   } catch {
     clearToken();
     user.value = null;
@@ -184,6 +303,21 @@ async function submitAuth() {
 async function loadProducts() {
   if (!user.value) return;
   products.value = await api.listProducts();
+}
+
+async function loadServices() {
+  if (!user.value) return;
+  services.value = await api.listServices();
+}
+
+async function loadAvailability() {
+  if (!user.value) return;
+  availability.value = await api.listAvailability();
+}
+
+async function loadAppointments() {
+  if (!user.value) return;
+  appointments.value = await api.listAppointments();
 }
 
 async function loadAnalytics() {
@@ -373,6 +507,233 @@ async function createProduct() {
     showNotice("Produto criado.");
   } catch (err) {
     showError(err instanceof Error ? err.message : "Nao foi possivel criar o produto.");
+  } finally {
+    loading.value = false;
+  }
+}
+
+function resetServiceForm() {
+  editingServiceId.value = "";
+  serviceForm.value = {
+    name: "",
+    description: "",
+    duration: 60,
+    price: 0,
+    image: "",
+    active: true,
+  };
+}
+
+function editService(service: Service) {
+  editingServiceId.value = service.id;
+  serviceForm.value = {
+    name: service.name,
+    description: service.description ?? "",
+    duration: service.duration,
+    price: Number(service.price),
+    image: service.image ?? "",
+    active: service.active,
+  };
+}
+
+async function uploadServiceImage(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+
+  if (!file) return;
+
+  uploadingProductImages.value = true;
+
+  try {
+    const result = await api.uploadProductImages([file]);
+    serviceForm.value.image = result.urls[0] ?? "";
+    showNotice("Imagem do serviÃ§o enviada.");
+  } catch (err) {
+    showError(
+      err instanceof Error
+        ? err.message
+        : "Nao foi possivel enviar a imagem do servico.",
+    );
+  } finally {
+    uploadingProductImages.value = false;
+    input.value = "";
+  }
+}
+
+async function saveService() {
+  loading.value = true;
+
+  try {
+    const input = {
+      name: serviceForm.value.name,
+      description: serviceForm.value.description,
+      duration: Number(serviceForm.value.duration),
+      price: Number(serviceForm.value.price),
+      image: serviceForm.value.image,
+      active: serviceForm.value.active,
+    };
+
+    if (editingServiceId.value) {
+      await api.updateService(editingServiceId.value, input);
+      showNotice("Servico atualizado.");
+    } else {
+      await api.createService(input);
+      showNotice("Servico criado.");
+    }
+
+    resetServiceForm();
+    await loadServices();
+  } catch (err) {
+    showError(
+      err instanceof Error
+        ? err.message
+        : "Nao foi possivel salvar o servico.",
+    );
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function removeService(serviceId: string) {
+  loading.value = true;
+
+  try {
+    await api.deleteService(serviceId);
+    await loadServices();
+    showNotice("Servico excluido.");
+  } catch (err) {
+    showError(
+      err instanceof Error
+        ? err.message
+        : "Nao foi possivel excluir o servico.",
+    );
+  } finally {
+    loading.value = false;
+  }
+}
+
+function resetAvailabilityForm() {
+  editingAvailabilityId.value = "";
+  availabilityForm.value = {
+    weekday: "MONDAY",
+    startTime: "09:00",
+    endTime: "18:00",
+    active: true,
+  };
+}
+
+function editAvailability(item: Availability) {
+  editingAvailabilityId.value = item.id;
+  availabilityForm.value = {
+    weekday: item.weekday,
+    startTime: item.startTime,
+    endTime: item.endTime,
+    active: item.active,
+  };
+}
+
+async function saveAvailability() {
+  loading.value = true;
+
+  try {
+    const input = { ...availabilityForm.value };
+
+    if (editingAvailabilityId.value) {
+      await api.updateAvailability(editingAvailabilityId.value, input);
+      showNotice("Disponibilidade atualizada.");
+    } else {
+      await api.createAvailability(input);
+      showNotice("Disponibilidade criada.");
+    }
+
+    resetAvailabilityForm();
+    await loadAvailability();
+  } catch (err) {
+    showError(
+      err instanceof Error
+        ? err.message
+        : "Nao foi possivel salvar a disponibilidade.",
+    );
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function removeAvailability(id: string) {
+  loading.value = true;
+
+  try {
+    await api.deleteAvailability(id);
+    await loadAvailability();
+    showNotice("Disponibilidade excluida.");
+  } catch (err) {
+    showError(
+      err instanceof Error
+        ? err.message
+        : "Nao foi possivel excluir a disponibilidade.",
+    );
+  } finally {
+    loading.value = false;
+  }
+}
+
+function selectServiceForAppointment(serviceId: string) {
+  selectedServiceId.value = serviceId;
+  appointmentForm.value.time = "";
+}
+
+async function createPublicAppointment() {
+  if (!company.value || !selectedServiceId.value) return;
+
+  loading.value = true;
+
+  try {
+    const date = new Date(
+      `${appointmentForm.value.date}T${appointmentForm.value.time}:00`,
+    );
+    const result = await api.createAppointment({
+      userId: company.value.id,
+      serviceId: selectedServiceId.value,
+      customerName: appointmentForm.value.customerName,
+      customerPhone: appointmentForm.value.customerPhone,
+      date: date.toISOString(),
+    });
+
+    showNotice("Agendamento criado.");
+    appointmentForm.value = {
+      date: "",
+      time: "",
+      customerName: "",
+      customerPhone: "",
+    };
+    window.open(result.whatsappUrl, "_blank", "noopener,noreferrer");
+  } catch (err) {
+    showError(
+      err instanceof Error
+        ? err.message
+        : "Nao foi possivel criar o agendamento.",
+    );
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function changeAppointmentStatus(
+  id: string,
+  status: AppointmentStatus,
+) {
+  loading.value = true;
+
+  try {
+    await api.updateAppointmentStatus(id, status);
+    await loadAppointments();
+    showNotice("Status do agendamento atualizado.");
+  } catch (err) {
+    showError(
+      err instanceof Error
+        ? err.message
+        : "Nao foi possivel atualizar o agendamento.",
+    );
   } finally {
     loading.value = false;
   }
@@ -665,6 +1026,35 @@ onMounted(async () => {
 
       </nav>
 
+      <nav class="sidebar-nav smart-agends-nav">
+        <button
+          type="button"
+          class="sidebar-item"
+          :class="{ active: dashboardTab === 'services' }"
+          @click="dashboardTab = 'services'; loadServices()"
+        >
+          Servicos
+        </button>
+
+        <button
+          type="button"
+          class="sidebar-item"
+          :class="{ active: dashboardTab === 'availability' }"
+          @click="dashboardTab = 'availability'; loadAvailability()"
+        >
+          Disponibilidade
+        </button>
+
+        <button
+          type="button"
+          class="sidebar-item"
+          :class="{ active: dashboardTab === 'agenda' }"
+          @click="dashboardTab = 'agenda'; loadAppointments()"
+        >
+          Agenda
+        </button>
+      </nav>
+
       <div class="sidebar-footer">
 
         <p class="eyebrow">
@@ -697,7 +1087,13 @@ onMounted(async () => {
               ? 'Produtos'
               : dashboardTab === 'analytics'
                 ? 'Analytics'
-                : 'Minha Empresa'
+                : dashboardTab === 'services'
+                  ? 'ServiÃ§os'
+                  : dashboardTab === 'availability'
+                    ? 'Disponibilidade'
+                    : dashboardTab === 'agenda'
+                      ? 'Agenda'
+                      : 'Minha Empresa'
           }}
           </h1>
 
@@ -707,7 +1103,13 @@ onMounted(async () => {
               ? 'Gerencie seu catálogo e publique novos produtos.'
               : dashboardTab === 'analytics'
                 ? 'Acompanhe o desempenho dos seus produtos.'
-                : 'Gerencie as informações da sua empresa.'
+                : dashboardTab === 'services'
+                  ? 'Gerencie os servicos oferecidos pela empresa.'
+                  : dashboardTab === 'availability'
+                    ? 'Defina os dias e horarios de atendimento.'
+                    : dashboardTab === 'agenda'
+                      ? 'Acompanhe e gerencie seus agendamentos.'
+                      : 'Gerencie as informações da sua empresa.'
           }}
           </p>
         </div>
@@ -718,7 +1120,13 @@ onMounted(async () => {
             ? `${products.length} produtos`
             : dashboardTab === 'analytics'
               ? `${monitoredProducts} produtos`
-              : 'Perfil'
+              : dashboardTab === 'services'
+                ? `${services.length} serviÃ§os`
+                : dashboardTab === 'availability'
+                  ? `${availability.length} horarios`
+                  : dashboardTab === 'agenda'
+                    ? `${appointments.length} agendamentos`
+                    : 'Perfil'
         }}
         </div>
 
@@ -932,6 +1340,333 @@ onMounted(async () => {
             </table>
 
           </div>
+        </div>
+
+        <div
+          v-if="dashboardTab === 'services'"
+          class="services-dashboard"
+        >
+          <form
+            class="product-form"
+            @submit.prevent="saveService"
+          >
+            <input
+              v-model="serviceForm.name"
+              required
+              placeholder="Nome do serviÃ§o"
+            />
+
+            <input
+              v-model.number="serviceForm.duration"
+              required
+              type="number"
+              min="1"
+              placeholder="DuraÃ§Ã£o em minutos"
+            />
+
+            <input
+              v-model.number="serviceForm.price"
+              required
+              type="number"
+              min="0"
+              step="0.01"
+              placeholder="PreÃ§o"
+            />
+
+            <label class="service-active-toggle">
+              <input
+                v-model="serviceForm.active"
+                type="checkbox"
+              />
+              <span>Ativo</span>
+            </label>
+
+            <label class="logo-upload product-image-upload">
+              <span>Imagem do serviÃ§o</span>
+              <input
+                type="file"
+                accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                :disabled="uploadingProductImages"
+                @change="uploadServiceImage"
+              />
+            </label>
+
+            <div
+              v-if="serviceForm.image"
+              class="product-image-preview-grid"
+            >
+              <div class="product-image-preview">
+                <img
+                  :src="serviceForm.image"
+                  alt=""
+                />
+
+                <button
+                  type="button"
+                  class="product-image-remove"
+                  @click="serviceForm.image = ''"
+                >
+                  Remover
+                </button>
+              </div>
+            </div>
+
+            <textarea
+              v-model="serviceForm.description"
+              placeholder="DescriÃ§Ã£o"
+            />
+
+            <button
+              class="primary-button"
+              type="submit"
+              :disabled="loading"
+            >
+              {{ editingServiceId ? 'Salvar serviÃ§o' : 'Criar serviÃ§o' }}
+            </button>
+
+            <button
+              v-if="editingServiceId"
+              class="ghost-button"
+              type="button"
+              @click="resetServiceForm"
+            >
+              Cancelar ediÃ§Ã£o
+            </button>
+          </form>
+
+          <div class="service-list">
+            <article
+              v-for="service in services"
+              :key="service.id"
+              class="service-card"
+            >
+              <div>
+                <img
+                  v-if="service.image"
+                  class="service-card-image"
+                  :src="service.image"
+                  alt=""
+                />
+
+                <h3>{{ service.name }}</h3>
+                <p>{{ service.description }}</p>
+                <span>
+                  {{ service.duration }} min - {{ formatCurrency(service.price) }}
+                </span>
+              </div>
+
+              <strong
+                :class="{
+                  inactive: !service.active
+                }"
+              >
+                {{ service.active ? 'Ativo' : 'Inativo' }}
+              </strong>
+
+              <div class="product-actions">
+                <button
+                  type="button"
+                  class="ghost-button"
+                  @click="editService(service)"
+                >
+                  Editar
+                </button>
+
+                <button
+                  type="button"
+                  class="ghost-button"
+                  @click="removeService(service.id)"
+                >
+                  Excluir
+                </button>
+              </div>
+            </article>
+
+            <p
+              v-if="!services.length"
+              class="muted"
+            >
+              Nenhum serviÃ§o cadastrado.
+            </p>
+          </div>
+        </div>
+
+        <div
+          v-if="dashboardTab === 'availability'"
+          class="availability-dashboard"
+        >
+          <form
+            class="availability-form"
+            @submit.prevent="saveAvailability"
+          >
+            <select v-model="availabilityForm.weekday">
+              <option
+                v-for="weekday in weekdayOptions"
+                :key="weekday.value"
+                :value="weekday.value"
+              >
+                {{ weekday.label }}
+              </option>
+            </select>
+
+            <label>
+              <span>Hora inicial</span>
+              <input
+                v-model="availabilityForm.startTime"
+                required
+                type="time"
+              />
+            </label>
+
+            <label>
+              <span>Hora final</span>
+              <input
+                v-model="availabilityForm.endTime"
+                required
+                type="time"
+              />
+            </label>
+
+            <label class="service-active-toggle">
+              <input
+                v-model="availabilityForm.active"
+                type="checkbox"
+              />
+              <span>Ativo</span>
+            </label>
+
+            <button
+              class="primary-button"
+              type="submit"
+              :disabled="loading"
+            >
+              {{ editingAvailabilityId ? 'Salvar horario' : 'Adicionar horario' }}
+            </button>
+
+            <button
+              v-if="editingAvailabilityId"
+              class="ghost-button"
+              type="button"
+              @click="resetAvailabilityForm"
+            >
+              Cancelar edicao
+            </button>
+          </form>
+
+          <div class="availability-list">
+            <article
+              v-for="item in availability"
+              :key="item.id"
+              class="availability-card"
+            >
+              <div>
+                <strong>{{ weekdayLabel(item.weekday) }}</strong>
+                <span>{{ item.startTime }} - {{ item.endTime }}</span>
+              </div>
+
+              <span :class="{ inactive: !item.active }">
+                {{ item.active ? 'Ativo' : 'Inativo' }}
+              </span>
+
+              <div class="product-actions">
+                <button
+                  type="button"
+                  class="ghost-button"
+                  @click="editAvailability(item)"
+                >
+                  Editar
+                </button>
+                <button
+                  type="button"
+                  class="ghost-button"
+                  @click="removeAvailability(item.id)"
+                >
+                  Excluir
+                </button>
+              </div>
+            </article>
+
+            <p v-if="!availability.length" class="muted">
+              Nenhum horario cadastrado.
+            </p>
+          </div>
+        </div>
+
+        <div
+          v-if="dashboardTab === 'agenda'"
+          class="agenda-dashboard"
+        >
+          <section class="agenda-group">
+            <h2>Hoje</h2>
+            <article
+              v-for="appointment in todayAppointments"
+              :key="appointment.id"
+              class="appointment-card"
+            >
+              <div>
+                <strong>{{ appointment.service.name }}</strong>
+                <p>{{ appointment.customerName }} - {{ appointment.customerPhone }}</p>
+                <span>{{ formatAppointmentDate(appointment.date) }}</span>
+              </div>
+              <span class="appointment-status">{{ appointment.status }}</span>
+              <div class="product-actions">
+                <button
+                  v-if="!['CONFIRMED', 'COMPLETED', 'CANCELED'].includes(appointment.status)"
+                  type="button"
+                  @click="changeAppointmentStatus(appointment.id, 'CONFIRMED')"
+                >Confirmar</button>
+                <button
+                  v-if="!['COMPLETED', 'CANCELED'].includes(appointment.status)"
+                  type="button"
+                  @click="changeAppointmentStatus(appointment.id, 'COMPLETED')"
+                >Concluir</button>
+                <button
+                  v-if="!['COMPLETED', 'CANCELED'].includes(appointment.status)"
+                  type="button"
+                  @click="changeAppointmentStatus(appointment.id, 'CANCELED')"
+                >Cancelar</button>
+              </div>
+            </article>
+            <p v-if="!todayAppointments.length" class="muted">
+              Nenhum agendamento para hoje.
+            </p>
+          </section>
+
+          <section class="agenda-group">
+            <h2>Proximos</h2>
+            <article
+              v-for="appointment in upcomingAppointments"
+              :key="appointment.id"
+              class="appointment-card"
+            >
+              <div>
+                <strong>{{ appointment.service.name }}</strong>
+                <p>{{ appointment.customerName }} - {{ appointment.customerPhone }}</p>
+                <span>{{ formatAppointmentDate(appointment.date) }}</span>
+              </div>
+              <span class="appointment-status">{{ appointment.status }}</span>
+              <div class="product-actions">
+                <button
+                  v-if="!['CONFIRMED', 'COMPLETED', 'CANCELED'].includes(appointment.status)"
+                  type="button"
+                  @click="changeAppointmentStatus(appointment.id, 'CONFIRMED')"
+                >Confirmar</button>
+                <button
+                  v-if="!['COMPLETED', 'CANCELED'].includes(appointment.status)"
+                  type="button"
+                  @click="changeAppointmentStatus(appointment.id, 'COMPLETED')"
+                >Concluir</button>
+                <button
+                  v-if="!['COMPLETED', 'CANCELED'].includes(appointment.status)"
+                  type="button"
+                  @click="changeAppointmentStatus(appointment.id, 'CANCELED')"
+                >Cancelar</button>
+              </div>
+            </article>
+            <p v-if="!upcomingAppointments.length" class="muted">
+              Nenhum proximo agendamento.
+            </p>
+          </section>
         </div>
 
         <div
@@ -1180,6 +1915,112 @@ onMounted(async () => {
             </span>
           </a>
         </div>
+
+        <section
+          v-if="company.services?.length"
+          class="public-services"
+        >
+          <div class="related-products-header">
+            <h2>ServiÃ§os</h2>
+            <p class="muted">
+              Fale no WhatsApp para agendar ou tirar dÃºvidas.
+            </p>
+          </div>
+
+          <div class="service-public-grid">
+            <article
+              v-for="service in company.services"
+              :key="service.id"
+              class="service-public-card"
+            >
+              <h3>{{ service.name }}</h3>
+              <img
+                v-if="service.image"
+                :src="service.image"
+                alt=""
+              />
+              <p>{{ service.description }}</p>
+              <span>
+                {{ service.duration }} min - {{ formatCurrency(service.price) }}
+              </span>
+
+              <button
+                class="primary-button"
+                type="button"
+                @click="selectServiceForAppointment(service.id)"
+              >
+                Agendar
+              </button>
+            </article>
+          </div>
+
+          <form
+            v-if="selectedPublicService"
+            class="public-appointment-form"
+            @submit.prevent="createPublicAppointment"
+          >
+            <div>
+              <p class="eyebrow">Agendamento</p>
+              <h3>{{ selectedPublicService.name }}</h3>
+            </div>
+
+            <label>
+              <span>Data</span>
+              <input
+                v-model="appointmentForm.date"
+                required
+                type="date"
+                :min="toLocalDateKey(new Date())"
+                @change="appointmentForm.time = ''"
+              />
+            </label>
+
+            <label>
+              <span>Horario</span>
+              <select
+                v-model="appointmentForm.time"
+                required
+                :disabled="!availableAppointmentTimes.length"
+              >
+                <option value="" disabled>Selecione</option>
+                <option
+                  v-for="time in availableAppointmentTimes"
+                  :key="time"
+                  :value="time"
+                >
+                  {{ time }}
+                </option>
+              </select>
+            </label>
+
+            <input
+              v-model="appointmentForm.customerName"
+              required
+              placeholder="Seu nome"
+            />
+
+            <input
+              v-model="appointmentForm.customerPhone"
+              required
+              placeholder="Seu WhatsApp"
+            />
+
+            <p
+              v-if="appointmentForm.date && !availableAppointmentTimes.length"
+              class="muted"
+            >
+              Nao ha horarios disponiveis para esta data.
+            </p>
+
+            <button
+              class="primary-button"
+              type="submit"
+              :disabled="loading || !appointmentForm.time"
+            >
+              Agendar no WhatsApp
+            </button>
+          </form>
+        </section>
 
       </section>
 

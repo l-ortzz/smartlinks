@@ -90,6 +90,43 @@ export async function findCompanyPageBySlug(slug: string) {
           createdAt: true,
         },
       },
+      services: {
+        where: {
+          active: true,
+        },
+        orderBy: {
+          name: "asc",
+        },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          duration: true,
+          price: true,
+          image: true,
+          active: true,
+        },
+      },
+      availability: {
+        where: {
+          active: true,
+        },
+        orderBy: [
+          {
+            weekday: "asc",
+          },
+          {
+            startTime: "asc",
+          },
+        ],
+        select: {
+          id: true,
+          weekday: true,
+          startTime: true,
+          endTime: true,
+          active: true,
+        },
+      },
     },
   });
 }

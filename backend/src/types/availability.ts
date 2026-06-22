@@ -14,3 +14,5 @@ export type CreateAvailabilityInput = {
   endTime: string;
   active?: boolean;
 };
+
+export type UpdateAvailabilityInput = Partial<CreateAvailabilityInput>;
