@@ -19,7 +19,7 @@ const weekdayByDayIndex = [
     "FRIDAY",
     "SATURDAY",
 ];
-const route = ref(window.location.hash || "#/dashboard");
+const route = ref(window.location.hash || "#/");
 const user = ref(null);
 const products = ref([]);
 const services = ref([]);
@@ -95,14 +95,21 @@ const companyForm = ref({
     endereco: "",
 });
 window.addEventListener("hashchange", () => {
-    route.value = window.location.hash || "#/dashboard";
+    route.value = window.location.hash || "#/";
     loadRoute();
 });
 const currentView = computed(() => {
-    if (route.value.startsWith("#/empresa/"))
+    if (route.value === "#" ||
+        route.value === "#/" ||
+        route.value === "") {
+        return "landing";
+    }
+    if (route.value.startsWith("#/empresa/")) {
         return "company";
-    if (route.value.startsWith("#/produto/"))
+    }
+    if (route.value.startsWith("#/produto/")) {
         return "product";
+    }
     return "dashboard";
 });
 const routeSlug = computed(() => {
@@ -454,7 +461,7 @@ async function uploadServiceImage(event) {
     catch (err) {
         showError(err instanceof Error
             ? err.message
-            : "Nao foi possivel enviar a imagem do servico.");
+            : "Nao foi possivel enviar a imagem do serviço.");
     }
     finally {
         uploadingProductImages.value = false;
@@ -474,11 +481,11 @@ async function saveService() {
         };
         if (editingServiceId.value) {
             await api.updateService(editingServiceId.value, input);
-            showNotice("Servico atualizado.");
+            showNotice("Serviço atualizado.");
         }
         else {
             await api.createService(input);
-            showNotice("Servico criado.");
+            showNotice("Serviço criado.");
         }
         resetServiceForm();
         await loadServices();
@@ -486,7 +493,7 @@ async function saveService() {
     catch (err) {
         showError(err instanceof Error
             ? err.message
-            : "Nao foi possivel salvar o servico.");
+            : "Nao foi possivel salvar o serviço.");
     }
     finally {
         loading.value = false;
@@ -497,12 +504,12 @@ async function removeService(serviceId) {
     try {
         await api.deleteService(serviceId);
         await loadServices();
-        showNotice("Servico excluido.");
+        showNotice("Serviço excluido.");
     }
     catch (err) {
         showError(err instanceof Error
             ? err.message
-            : "Nao foi possivel excluir o servico.");
+            : "Nao foi possivel excluir o serviço.");
     }
     finally {
         loading.value = false;
@@ -707,39 +714,41 @@ __VLS_asFunctionalElement1(__VLS_intrinsics.main, __VLS_intrinsics.main)({
     ...{ class: "app-shell" },
 });
 /** @type {__VLS_StyleScopedClasses['app-shell']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.header, __VLS_intrinsics.header)({
-    ...{ class: "topbar" },
-});
-/** @type {__VLS_StyleScopedClasses['topbar']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.a, __VLS_intrinsics.a)({
-    ...{ class: "brand" },
-    href: "#/dashboard",
-});
-/** @type {__VLS_StyleScopedClasses['brand']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
-    ...{ class: "brand-mark" },
-});
-/** @type {__VLS_StyleScopedClasses['brand-mark']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
-__VLS_asFunctionalElement1(__VLS_intrinsics.nav, __VLS_intrinsics.nav)({
-    ...{ class: "nav-links" },
-});
-/** @type {__VLS_StyleScopedClasses['nav-links']} */ ;
-__VLS_asFunctionalElement1(__VLS_intrinsics.a, __VLS_intrinsics.a)({
-    href: "#/dashboard",
-});
-if (__VLS_ctx.user) {
+if (__VLS_ctx.currentView !== 'landing') {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.header, __VLS_intrinsics.header)({
+        ...{ class: "topbar" },
+    });
+    /** @type {__VLS_StyleScopedClasses['topbar']} */ ;
     __VLS_asFunctionalElement1(__VLS_intrinsics.a, __VLS_intrinsics.a)({
-        href: (__VLS_ctx.publicCompanyUrl),
+        ...{ class: "brand" },
+        href: "#/dashboard",
     });
-}
-if (__VLS_ctx.user) {
-    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-        ...{ onClick: (__VLS_ctx.logout) },
-        ...{ class: "ghost-button" },
-        type: "button",
+    /** @type {__VLS_StyleScopedClasses['brand']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+        ...{ class: "brand-mark" },
     });
-    /** @type {__VLS_StyleScopedClasses['ghost-button']} */ ;
+    /** @type {__VLS_StyleScopedClasses['brand-mark']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.nav, __VLS_intrinsics.nav)({
+        ...{ class: "nav-links" },
+    });
+    /** @type {__VLS_StyleScopedClasses['nav-links']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.a, __VLS_intrinsics.a)({
+        href: "#/dashboard",
+    });
+    if (__VLS_ctx.user) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.a, __VLS_intrinsics.a)({
+            href: (__VLS_ctx.publicCompanyUrl),
+        });
+    }
+    if (__VLS_ctx.user) {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+            ...{ onClick: (__VLS_ctx.logout) },
+            ...{ class: "ghost-button" },
+            type: "button",
+        });
+        /** @type {__VLS_StyleScopedClasses['ghost-button']} */ ;
+    }
 }
 if (__VLS_ctx.error) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
@@ -756,6 +765,71 @@ if (__VLS_ctx.notice) {
     /** @type {__VLS_StyleScopedClasses['feedback']} */ ;
     /** @type {__VLS_StyleScopedClasses['success']} */ ;
     (__VLS_ctx.notice);
+}
+if (__VLS_ctx.currentView === 'landing') {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+        ...{ class: "landing-page" },
+    });
+    /** @type {__VLS_StyleScopedClasses['landing-page']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "landing-hero" },
+    });
+    /** @type {__VLS_StyleScopedClasses['landing-hero']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+        ...{ class: "eyebrow" },
+    });
+    /** @type {__VLS_StyleScopedClasses['eyebrow']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.h1, __VLS_intrinsics.h1)({
+        ...{ class: "landing-title" },
+    });
+    /** @type {__VLS_StyleScopedClasses['landing-title']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+        ...{ class: "landing-subtitle" },
+    });
+    /** @type {__VLS_StyleScopedClasses['landing-subtitle']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "landing-actions" },
+    });
+    /** @type {__VLS_StyleScopedClasses['landing-actions']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (...[$event]) => {
+                if (!(__VLS_ctx.currentView === 'landing'))
+                    return;
+                __VLS_ctx.route = '#/dashboard';
+                // @ts-ignore
+                [currentView, currentView, user, user, publicCompanyUrl, logout, error, error, notice, notice, route,];
+            } },
+        ...{ class: "primary-button" },
+    });
+    /** @type {__VLS_StyleScopedClasses['primary-button']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.a, __VLS_intrinsics.a)({
+        ...{ class: "ghost-button" },
+        href: "#beneficios",
+    });
+    /** @type {__VLS_StyleScopedClasses['ghost-button']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+        id: "beneficios",
+        ...{ class: "landing-benefits" },
+    });
+    /** @type {__VLS_StyleScopedClasses['landing-benefits']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
+        ...{ class: "landing-card" },
+    });
+    /** @type {__VLS_StyleScopedClasses['landing-card']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.h3, __VLS_intrinsics.h3)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
+        ...{ class: "landing-card" },
+    });
+    /** @type {__VLS_StyleScopedClasses['landing-card']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.h3, __VLS_intrinsics.h3)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
+        ...{ class: "landing-card" },
+    });
+    /** @type {__VLS_StyleScopedClasses['landing-card']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.h3, __VLS_intrinsics.h3)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
 }
 if (__VLS_ctx.currentView === 'dashboard' && !__VLS_ctx.user) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
@@ -838,7 +912,7 @@ if (__VLS_ctx.currentView === 'dashboard' && !__VLS_ctx.user) {
                         ? 'register'
                         : 'login';
                 // @ts-ignore
-                [user, user, user, publicCompanyUrl, logout, error, error, notice, notice, currentView, authMode, authMode, authMode, authMode, authMode, authMode, authMode, submitAuth, authForm, authForm, authForm, authForm, authForm, authForm, loading,];
+                [currentView, user, authMode, authMode, authMode, authMode, authMode, authMode, authMode, submitAuth, authForm, authForm, authForm, authForm, authForm, authForm, loading,];
             } },
         ...{ class: "ghost-button" },
         type: "button",
@@ -880,7 +954,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                         return;
                     __VLS_ctx.dashboardTab = 'products';
                     // @ts-ignore
-                    [user, user, currentView, authMode, dashboardTab,];
+                    [currentView, user, user, authMode, dashboardTab,];
                 } },
             type: "button",
             ...{ class: "sidebar-item" },
@@ -1022,7 +1096,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
             : __VLS_ctx.dashboardTab === 'analytics'
                 ? 'Analytics'
                 : __VLS_ctx.dashboardTab === 'services'
-                    ? 'ServiÃ§os'
+                    ? 'Serviços'
                     : __VLS_ctx.dashboardTab === 'availability'
                         ? 'Disponibilidade'
                         : __VLS_ctx.dashboardTab === 'agenda'
@@ -1039,7 +1113,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                 : __VLS_ctx.dashboardTab === 'services'
                     ? 'Gerencie os servicos oferecidos pela empresa.'
                     : __VLS_ctx.dashboardTab === 'availability'
-                        ? 'Defina os dias e horarios de atendimento.'
+                        ? 'Defina os dias e horários de atendimento.'
                         : __VLS_ctx.dashboardTab === 'agenda'
                             ? 'Acompanhe e gerencie seus agendamentos.'
                             : 'Gerencie as informações da sua empresa.');
@@ -1052,7 +1126,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
             : __VLS_ctx.dashboardTab === 'analytics'
                 ? `${__VLS_ctx.monitoredProducts} produtos`
                 : __VLS_ctx.dashboardTab === 'services'
-                    ? `${__VLS_ctx.services.length} serviÃ§os`
+                    ? `${__VLS_ctx.services.length} serviço`
                     : __VLS_ctx.dashboardTab === 'availability'
                         ? `${__VLS_ctx.availability.length} horarios`
                         : __VLS_ctx.dashboardTab === 'agenda'
@@ -1372,14 +1446,14 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
             /** @type {__VLS_StyleScopedClasses['product-form']} */ ;
             __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
                 required: true,
-                placeholder: "Nome do serviÃ§o",
+                placeholder: "Nome do serviço",
             });
             (__VLS_ctx.serviceForm.name);
             __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
                 required: true,
                 type: "number",
                 min: "1",
-                placeholder: "DuraÃ§Ã£o em minutos",
+                placeholder: "Duração em minutos",
             });
             (__VLS_ctx.serviceForm.duration);
             __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
@@ -1387,7 +1461,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                 type: "number",
                 min: "0",
                 step: "0.01",
-                placeholder: "PreÃ§o",
+                placeholder: "Preço",
             });
             (__VLS_ctx.serviceForm.price);
             __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
@@ -1445,7 +1519,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
             }
             __VLS_asFunctionalElement1(__VLS_intrinsics.textarea)({
                 value: (__VLS_ctx.serviceForm.description),
-                placeholder: "DescriÃ§Ã£o",
+                placeholder: "Descrição",
             });
             __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                 ...{ class: "primary-button" },
@@ -1453,7 +1527,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                 disabled: (__VLS_ctx.loading),
             });
             /** @type {__VLS_StyleScopedClasses['primary-button']} */ ;
-            (__VLS_ctx.editingServiceId ? 'Salvar serviÃ§o' : 'Criar serviÃ§o');
+            (__VLS_ctx.editingServiceId ? 'Salvar serviço' : 'Criar serviço');
             if (__VLS_ctx.editingServiceId) {
                 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                     ...{ onClick: (__VLS_ctx.resetServiceForm) },

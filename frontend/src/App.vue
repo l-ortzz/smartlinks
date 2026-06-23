@@ -1,10 +1,18 @@
 <script setup lang="ts">
+function goToDashboard() {  window.location.hash = "#/dashboard";}
+function scrollToBenefits() {
+  document
+    .getElementById("beneficios")
+    ?.scrollIntoView({
+      behavior: "smooth",
+    });
+}
 import { computed, onMounted, ref } from "vue";
 import { api, clearToken, getToken, setToken, type Appointment, type AppointmentStatus, type Availability, type CompanyPage, type ProductAnalytics, type Product, type PublicProduct, type Service, type SessionUser, type Weekday } from "./api";
 import { formatCurrency, slugify } from "./format";
 
 
-type View = "dashboard" | "company" | "product";
+type View =  | "landing"  | "dashboard"  | "company"  | "product";
 
 const weekdayOptions: Array<{ value: Weekday; label: string }> = [
   { value: "MONDAY", label: "Segunda-feira" },
@@ -26,7 +34,7 @@ const weekdayByDayIndex: Weekday[] = [
   "SATURDAY",
 ];
 
-const route = ref(window.location.hash || "#/dashboard");
+const route = ref(window.location.hash || "#/");
 const user = ref<SessionUser | null>(null);
 const products = ref<Product[]>([]);
 const services = ref<Service[]>([]);
@@ -110,13 +118,24 @@ const companyForm = ref({
 });
 
 window.addEventListener("hashchange", () => {
-  route.value = window.location.hash || "#/dashboard";
+  route.value = window.location.hash || "#/";
   loadRoute();
 });
 
 const currentView = computed<View>(() => {
-  if (route.value.startsWith("#/empresa/")) return "company";
-  if (route.value.startsWith("#/produto/")) return "product";
+  if (
+    route.value === "#" ||
+    route.value === "#/" ||
+    route.value === ""
+  ) {
+    return "landing";
+  }
+  if (route.value.startsWith("#/empresa/")) {
+    return "company";
+  }
+  if (route.value.startsWith("#/produto/")) {
+    return "product";
+  }
   return "dashboard";
 });
 
@@ -552,7 +571,7 @@ async function uploadServiceImage(event: Event) {
     showError(
       err instanceof Error
         ? err.message
-        : "Nao foi possivel enviar a imagem do servico.",
+        : "Nao foi possivel enviar a imagem do serviço.",
     );
   } finally {
     uploadingProductImages.value = false;
@@ -575,10 +594,10 @@ async function saveService() {
 
     if (editingServiceId.value) {
       await api.updateService(editingServiceId.value, input);
-      showNotice("Servico atualizado.");
+      showNotice("Serviço atualizado.");
     } else {
       await api.createService(input);
-      showNotice("Servico criado.");
+      showNotice("Serviço criado.");
     }
 
     resetServiceForm();
@@ -587,7 +606,7 @@ async function saveService() {
     showError(
       err instanceof Error
         ? err.message
-        : "Nao foi possivel salvar o servico.",
+        : "Nao foi possivel salvar o serviço.",
     );
   } finally {
     loading.value = false;
@@ -600,12 +619,12 @@ async function removeService(serviceId: string) {
   try {
     await api.deleteService(serviceId);
     await loadServices();
-    showNotice("Servico excluido.");
+    showNotice("Serviço excluido.");
   } catch (err) {
     showError(
       err instanceof Error
         ? err.message
-        : "Nao foi possivel excluir o servico.",
+        : "Nao foi possivel excluir o serviço.",
     );
   } finally {
     loading.value = false;
@@ -846,15 +865,14 @@ onMounted(async () => {
 
 <template>
   <main class="app-shell">
-    <header class="topbar">
-      <a class="brand" href="#/dashboard">
+    <header  v-if="currentView !== 'landing'"  class="topbar">      <a class="brand" href="#/dashboard">
         <span class="brand-mark">SL</span>
         <span>Smart Links</span>
       </a>
 
       <nav class="nav-links">
         <a href="#/dashboard">Dashboard</a>
-        <a v-if="user" :href="publicCompanyUrl">Pagina publica</a>
+        <a v-if="user" :href="publicCompanyUrl">Página publica</a>
         <button v-if="user" class="ghost-button" type="button" @click="logout">Sair</button>
       </nav>
     </header>
@@ -863,11 +881,293 @@ onMounted(async () => {
     <p v-if="notice" class="feedback success">{{ notice }}</p>
 
     <section
-      v-if="currentView === 'dashboard' && !user"
-      class="workspace"
-    >
-      <section class="main-panel">
+      v-if="currentView === 'landing'"class="landing-page">
+      <header class="landing-navbar">
 
+      <div class="landing-logo">
+        <span class="brand-mark">SL</span>
+        <strong>Smart Links</strong>
+      </div>
+
+      <nav class="landing-menu">
+
+        <a href="#beneficios">
+          Benefícios
+        </a>
+
+        <a href="#como-funciona">
+          Como Funciona
+        </a>
+
+        <a href="#modulos">
+          Recursos
+        </a>
+
+      </nav>
+
+      <button
+        class="primary-button"
+        @click="goToDashboard"
+      >
+        Criar Conta
+      </button>
+
+    </header>
+      <div class="landing-hero">
+
+        <p class="eyebrow">
+          SMART LINKS
+        </p>
+
+        <h1 class="landing-title">
+          Organize seu WhatsApp
+          e transforme mais
+          cliques em vendas.
+        </h1>
+
+        <p class="landing-subtitle">
+          Crie páginas de produtos, receba pedidos,
+          organize agendamentos e acompanhe resultados
+          em uma única plataforma.
+        </p>
+
+        <div class="landing-actions">
+
+          <button
+            class="primary-button"
+            @click="goToDashboard"
+          >
+            Criar Conta Grátis
+          </button>
+
+          <button
+            class="ghost-button"
+            @click="scrollToBenefits"
+          >
+            Ver Como Funciona
+          </button>
+
+        </div>
+
+      </div>
+
+      <section class="landing-showcase">
+
+      <div class="showcase-card">
+
+        <div class="showcase-sidebar">
+          <div>📦 Produtos</div>
+          <div>🛠 Serviços</div>
+          <div>📅 Agenda</div>
+          <div>📈 Analytics</div>
+        </div>
+
+        <div class="showcase-content">
+
+          <div class="showcase-stat">
+            <span>Produtos</span>
+            <strong>24</strong>
+          </div>
+
+          <div class="showcase-stat">
+            <span>Reservas</span>
+            <strong>18</strong>
+          </div>
+
+          <div class="showcase-stat">
+            <span>Agendamentos</span>
+            <strong>11</strong>
+          </div>
+
+        </div>
+
+      </div>
+
+    </section>
+    <section class="landing-target">
+
+        <h2>
+          Para quem é a Smart Links?
+        </h2>
+
+        <div class="target-grid">
+
+          <div class="target-card">
+            <h3>Lojas</h3>
+            <p>
+              Venda produtos pelo WhatsApp com mais organização.
+            </p>
+          </div>
+
+          <div class="target-card">
+            <h3>Prestadores de Serviço</h3>
+            <p>
+              Organize agenda, horários e atendimentos.
+            </p>
+          </div>
+
+          <div class="target-card">
+            <h3>Profissionais Autônomos</h3>
+            <p>
+              Centralize clientes, serviços e contatos.
+            </p>
+          </div>
+
+        </div>
+
+      </section>
+
+      <section
+        id="beneficios"
+        class="landing-benefits"
+      >
+      
+        <article class="landing-card">
+          <h3>Produtos</h3>
+          <p>
+            Crie uma vitrine online para seus produtos.
+          </p>
+        </article>
+
+        <article class="landing-card">
+          <h3>Serviços</h3>
+          <p>
+            Receba agendamentos automaticamente.
+          </p>
+        </article>
+
+        <article class="landing-card">
+          <h3>WhatsApp</h3>
+          <p>
+            Converta clientes com poucos cliques.
+          </p>
+        </article>
+
+      </section>
+    
+    <section
+      id="como-funciona"
+      class="landing-steps"
+    >
+
+      <h2>Como funciona</h2>
+
+      <div class="steps-grid">
+
+        <div class="step-card">
+          <span>1</span>
+          <h3>Crie sua conta</h3>
+          <p>Cadastre sua empresa gratuitamente.</p>
+        </div>
+
+        <div class="step-card">
+          <span>2</span>
+          <h3>Cadastre produtos ou serviços</h3>
+          <p>Monte sua vitrine digital.</p>
+        </div>
+
+        <div class="step-card">
+          <span>3</span>
+          <h3>Compartilhe seu link</h3>
+          <p>Instagram, WhatsApp e anúncios.</p>
+        </div>
+
+        <div class="step-card">
+          <span>4</span>
+          <h3>Receba clientes</h3>
+          <p>Mais organização e mais vendas.</p>
+        </div>
+
+      </div>
+
+    </section>
+
+   <section
+      id="modulos"
+      class="landing-modules"
+    >
+
+      <div class="module-card">
+
+        <h2>Smart Pages</h2>
+
+        <ul>
+          <li>Catálogo digital</li>
+          <li>Página da empresa</li>
+          <li>Páginas de produtos</li>
+          <li>Reservas via WhatsApp</li>
+        </ul>
+
+      </div>
+
+      <div class="module-card">
+
+        <h2>Smart Agends</h2>
+
+        <ul>
+          <li>Serviços</li>
+          <li>Disponibilidade</li>
+          <li>Agendamentos</li>
+          <li>Agenda da empresa</li>
+        </ul>
+
+      </div>
+
+    </section>
+
+    <section class="landing-faq">
+
+      <h2>
+        Perguntas Frequentes
+      </h2>
+
+      <div class="faq-item">
+        <h3>Preciso instalar algo?</h3>
+        <p>Não. Tudo funciona pelo navegador.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>Funciona pelo celular?</h3>
+        <p>Sim. Toda a plataforma é responsiva.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>Posso usar apenas produtos?</h3>
+        <p>Sim. Você escolhe os módulos que deseja utilizar.</p>
+      </div>
+
+      <div class="faq-item">
+        <h3>Posso usar apenas agendamentos?</h3>
+        <p>Sim. O Smart Agends funciona de forma independente.</p>
+      </div>
+
+    </section>
+
+    <section class="landing-cta">
+
+      <h2>
+        Comece gratuitamente hoje.
+      </h2>
+
+      <p>
+        Organize seus produtos, serviços e atendimentos
+        em um único lugar.
+      </p>
+
+      <button
+        class="primary-button"
+        @click="goToDashboard"
+      >
+        Criar Minha Conta
+      </button>
+
+    </section>
+    </section>
+    <section
+      v-if="currentView === 'dashboard' && !user"
+      class="auth-page"
+    >
+      <section class="auth-card">
         <p class="eyebrow">Smart Links</p>
 
         <h1>
@@ -1033,7 +1333,7 @@ onMounted(async () => {
           :class="{ active: dashboardTab === 'services' }"
           @click="dashboardTab = 'services'; loadServices()"
         >
-          Servicos
+          Serviços
         </button>
 
         <button
@@ -1088,7 +1388,7 @@ onMounted(async () => {
               : dashboardTab === 'analytics'
                 ? 'Analytics'
                 : dashboardTab === 'services'
-                  ? 'ServiÃ§os'
+                  ? 'Serviços'
                   : dashboardTab === 'availability'
                     ? 'Disponibilidade'
                     : dashboardTab === 'agenda'
@@ -1106,7 +1406,7 @@ onMounted(async () => {
                 : dashboardTab === 'services'
                   ? 'Gerencie os servicos oferecidos pela empresa.'
                   : dashboardTab === 'availability'
-                    ? 'Defina os dias e horarios de atendimento.'
+                    ? 'Defina os dias e horários de atendimento.'
                     : dashboardTab === 'agenda'
                       ? 'Acompanhe e gerencie seus agendamentos.'
                       : 'Gerencie as informações da sua empresa.'
@@ -1121,7 +1421,7 @@ onMounted(async () => {
             : dashboardTab === 'analytics'
               ? `${monitoredProducts} produtos`
               : dashboardTab === 'services'
-                ? `${services.length} serviÃ§os`
+                ? `${services.length} serviço`
                 : dashboardTab === 'availability'
                   ? `${availability.length} horarios`
                   : dashboardTab === 'agenda'
@@ -1353,7 +1653,7 @@ onMounted(async () => {
             <input
               v-model="serviceForm.name"
               required
-              placeholder="Nome do serviÃ§o"
+              placeholder="Nome do serviço"
             />
 
             <input
@@ -1361,7 +1661,7 @@ onMounted(async () => {
               required
               type="number"
               min="1"
-              placeholder="DuraÃ§Ã£o em minutos"
+              placeholder="Duração em minutos"
             />
 
             <input
@@ -1370,7 +1670,7 @@ onMounted(async () => {
               type="number"
               min="0"
               step="0.01"
-              placeholder="PreÃ§o"
+              placeholder="Preço"
             />
 
             <label class="service-active-toggle">
@@ -1382,7 +1682,7 @@ onMounted(async () => {
             </label>
 
             <label class="logo-upload product-image-upload">
-              <span>Imagem do serviÃ§o</span>
+              <span>Imagem do serviço</span>
               <input
                 type="file"
                 accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
@@ -1413,7 +1713,7 @@ onMounted(async () => {
 
             <textarea
               v-model="serviceForm.description"
-              placeholder="DescriÃ§Ã£o"
+              placeholder="Descrição"
             />
 
             <button
@@ -1421,7 +1721,7 @@ onMounted(async () => {
               type="submit"
               :disabled="loading"
             >
-              {{ editingServiceId ? 'Salvar serviÃ§o' : 'Criar serviÃ§o' }}
+              {{ editingServiceId ? 'Salvar serviço' : 'Criar serviço' }}
             </button>
 
             <button
@@ -1430,7 +1730,7 @@ onMounted(async () => {
               type="button"
               @click="resetServiceForm"
             >
-              Cancelar ediÃ§Ã£o
+              Cancelar edição
             </button>
           </form>
 
@@ -1486,7 +1786,7 @@ onMounted(async () => {
               v-if="!services.length"
               class="muted"
             >
-              Nenhum serviÃ§o cadastrado.
+              Nenhum serviço cadastrado.
             </p>
           </div>
         </div>
@@ -1587,7 +1887,7 @@ onMounted(async () => {
             </article>
 
             <p v-if="!availability.length" class="muted">
-              Nenhum horario cadastrado.
+              Nenhum horário cadastrado.
             </p>
           </div>
         </div>
@@ -1921,9 +2221,9 @@ onMounted(async () => {
           class="public-services"
         >
           <div class="related-products-header">
-            <h2>ServiÃ§os</h2>
+            <h2>Serviços</h2>
             <p class="muted">
-              Fale no WhatsApp para agendar ou tirar dÃºvidas.
+              Fale no WhatsApp para agendar ou tirar dúvidas.
             </p>
           </div>
 
@@ -1976,7 +2276,7 @@ onMounted(async () => {
             </label>
 
             <label>
-              <span>Horario</span>
+              <span>Horário</span>
               <select
                 v-model="appointmentForm.time"
                 required
@@ -2009,7 +2309,7 @@ onMounted(async () => {
               v-if="appointmentForm.date && !availableAppointmentTimes.length"
               class="muted"
             >
-              Nao ha horarios disponiveis para esta data.
+              Não ha horários disponiveis para esta data.
             </p>
 
             <button
