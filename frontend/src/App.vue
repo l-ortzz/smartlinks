@@ -913,207 +913,98 @@ onMounted(async () => {
       </button>
 
     </header>
-      <div class="landing-hero">
+    <section class="landing-hero">
 
-        <p class="eyebrow">
-          SMART LINKS
-        </p>
+      <div class="hero-content">
 
-        <h1 class="landing-title">
-          Organize seu WhatsApp
-          e transforme mais
-          cliques em vendas.
-        </h1>
+      <p class="eyebrow">
+        SMART LINKS
+      </p>
 
-        <p class="landing-subtitle">
-          Crie páginas de produtos, receba pedidos,
-          organize agendamentos e acompanhe resultados
-          em uma única plataforma.
-        </p>
+      <h1 class="landing-title">
+        Organize vendas e agendamentos
+        em um único lugar.
+      </h1>
 
-        <div class="landing-actions">
+      <p class="landing-subtitle">
+        Crie páginas de produtos, receba pedidos,
+        organize agendamentos e acompanhe resultados
+        em uma única plataforma.
+      </p>
 
-          <button
-            class="primary-button"
-            @click="goToDashboard"
-          >
-            Criar Conta Grátis
-          </button>
+      <div class="landing-actions">
 
-          <button
-            class="ghost-button"
-            @click="scrollToBenefits"
-          >
-            Ver Como Funciona
-          </button>
+        <button
+          class="primary-button"
+          @click="goToDashboard"
+        >
+          Criar Conta
+        </button>
 
-        </div>
-
-      </div>
-
-      <section class="landing-showcase">
-
-      <div class="showcase-card">
-
-        <div class="showcase-sidebar">
-          <div>📦 Produtos</div>
-          <div>🛠 Serviços</div>
-          <div>📅 Agenda</div>
-          <div>📈 Analytics</div>
-        </div>
-
-        <div class="showcase-content">
-
-          <div class="showcase-stat">
-            <span>Produtos</span>
-            <strong>24</strong>
-          </div>
-
-          <div class="showcase-stat">
-            <span>Reservas</span>
-            <strong>18</strong>
-          </div>
-
-          <div class="showcase-stat">
-            <span>Agendamentos</span>
-            <strong>11</strong>
-          </div>
-
-        </div>
+        <button
+          class="ghost-button"
+          @click="scrollToBenefits"
+        >
+          Ver Como Funciona
+        </button>
 
       </div>
 
-    </section>
-    <section class="landing-target">
+        </div>
 
-        <h2>
-          Para quem é a Smart Links?
-        </h2>
+        <div class="hero-image">
 
-        <div class="target-grid">
-
-          <div class="target-card">
-            <h3>Lojas</h3>
-            <p>
-              Venda produtos pelo WhatsApp com mais organização.
-            </p>
-          </div>
-
-          <div class="target-card">
-            <h3>Prestadores de Serviço</h3>
-            <p>
-              Organize agenda, horários e atendimentos.
-            </p>
-          </div>
-
-          <div class="target-card">
-            <h3>Profissionais Autônomos</h3>
-            <p>
-              Centralize clientes, serviços e contatos.
-            </p>
-          </div>
+      <img
+        src="/dashboard-preview.png"
+        alt="Dashboard Smart Links"
+      />
 
         </div>
+
+      </section>
+
+      <section id="beneficios" class="landing-benefits">
+
+        <div class="section-header">
+
+          <p class="section-eyebrow">
+            POR QUE USAR A SMART LINKS
+          </p>
+
+          <h2 class="section-title">
+            Tudo que você precisa para vender mais e se organizar melhor
+          </h2>
+
+        </div>
+
+        <img
+          class="benefits-image"
+          src="/benefits-grid.png"
+          alt="Benefícios Smart Links"
+        />
 
       </section>
 
       <section
-        id="beneficios"
-        class="landing-benefits"
+        id="como-funciona"
+        class="landing-steps"
       >
-      
-        <article class="landing-card">
-          <h3>Produtos</h3>
-          <p>
-            Crie uma vitrine online para seus produtos.
-          </p>
-        </article>
 
-        <article class="landing-card">
-          <h3>Serviços</h3>
-          <p>
-            Receba agendamentos automaticamente.
-          </p>
-        </article>
+        <p class="section-eyebrow">
+          COMO FUNCIONA
+        </p>
 
-        <article class="landing-card">
-          <h3>WhatsApp</h3>
-          <p>
-            Converta clientes com poucos cliques.
-          </p>
-        </article>
+        <h2 class="section-title">
+          Em 4 passos simples
+        </h2>
+
+        <img
+          class="steps-image"
+          src="/steps-grid.png"
+          alt="Passos Smart Links"
+        />
 
       </section>
-    
-    <section
-      id="como-funciona"
-      class="landing-steps"
-    >
-
-      <h2>Como funciona</h2>
-
-      <div class="steps-grid">
-
-        <div class="step-card">
-          <span>1</span>
-          <h3>Crie sua conta</h3>
-          <p>Cadastre sua empresa gratuitamente.</p>
-        </div>
-
-        <div class="step-card">
-          <span>2</span>
-          <h3>Cadastre produtos ou serviços</h3>
-          <p>Monte sua vitrine digital.</p>
-        </div>
-
-        <div class="step-card">
-          <span>3</span>
-          <h3>Compartilhe seu link</h3>
-          <p>Instagram, WhatsApp e anúncios.</p>
-        </div>
-
-        <div class="step-card">
-          <span>4</span>
-          <h3>Receba clientes</h3>
-          <p>Mais organização e mais vendas.</p>
-        </div>
-
-      </div>
-
-    </section>
-
-   <section
-      id="modulos"
-      class="landing-modules"
-    >
-
-      <div class="module-card">
-
-        <h2>Smart Pages</h2>
-
-        <ul>
-          <li>Catálogo digital</li>
-          <li>Página da empresa</li>
-          <li>Páginas de produtos</li>
-          <li>Reservas via WhatsApp</li>
-        </ul>
-
-      </div>
-
-      <div class="module-card">
-
-        <h2>Smart Agends</h2>
-
-        <ul>
-          <li>Serviços</li>
-          <li>Disponibilidade</li>
-          <li>Agendamentos</li>
-          <li>Agenda da empresa</li>
-        </ul>
-
-      </div>
-
-    </section>
 
     <section class="landing-faq">
 
@@ -1146,7 +1037,7 @@ onMounted(async () => {
     <section class="landing-cta">
 
       <h2>
-        Comece gratuitamente hoje.
+        Comece hoje.
       </h2>
 
       <p>
@@ -1182,7 +1073,7 @@ onMounted(async () => {
           {{
             authMode === 'login'
               ? 'Acesse sua vitrine.'
-              : 'Crie sua empresa gratuitamente.'
+              : 'Crie sua empresa.'
           }}
         </p>
 
