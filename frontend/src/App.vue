@@ -1006,6 +1006,89 @@ onMounted(async () => {
 
       </section>
 
+      <section
+        id="modulos"
+        class="landing-modules"
+        >
+
+        <div class="module-item">
+
+        <div class="module-info">
+
+        <p class="section-eyebrow">
+        SMART PAGES
+        </p>
+
+        <h2 class="section-title">
+        Sua página completa na internet.
+        </h2>
+
+        <p>
+
+        Crie sua vitrine online, apresente seus produtos,
+        receba pedidos pelo WhatsApp e tenha uma presença
+        profissional.
+
+        </p>
+
+        <button
+        class="primary-button"
+        @click="goToDashboard"
+        >
+
+        Começar
+
+        </button>
+
+        </div>
+
+        <img
+        src="/smart-pages.png"
+        alt="Smart Pages"
+        />
+
+        </div>
+
+        <div class="module-item">
+
+        <div class="module-info">
+
+        <p class="section-eyebrow">
+        SMART AGENDS
+        </p>
+
+        <h2 class="section-title">
+        Organize todos os seus atendimentos.
+        </h2>
+
+        <p>
+
+        Cadastre serviços, horários,
+        receba agendamentos online
+        e acompanhe tudo em uma agenda única.
+
+        </p>
+
+        <button
+        class="primary-button"
+        @click="goToDashboard"
+        >
+
+        Conhecer
+
+        </button>
+
+        </div>
+
+        <img
+        src="/smart-agends.png"
+        alt="Smart Agends"
+        />
+
+        </div>
+
+        </section>
+
     <section class="landing-faq">
 
       <h2>
@@ -1036,28 +1119,105 @@ onMounted(async () => {
 
     <section class="landing-cta">
 
-      <h2>
-        Comece hoje.
-      </h2>
+      <div class="cta-box">
 
-      <p>
-        Organize seus produtos, serviços e atendimentos
-        em um único lugar.
-      </p>
+        <p class="section-eyebrow">
+          PRONTO PARA COMEÇAR?
+        </p>
 
-      <button
-        class="primary-button"
-        @click="goToDashboard"
-      >
-        Criar Minha Conta
-      </button>
+        <h2>
+          Organize sua empresa em um único lugar.
+        </h2>
+
+        <p>
+          Produtos, serviços, agendamentos e atendimento via WhatsApp
+          em uma plataforma simples e organizada.
+        </p>
+
+        <button
+          class="primary-button"
+          @click="goToDashboard"
+        >
+          Criar Minha Conta
+        </button>
+
+      </div>
 
     </section>
+
+    <footer class="landing-footer">
+
+        <div class="footer-brand">
+
+          <div class="landing-logo">
+
+            <span class="brand-mark">
+              SL
+            </span>
+
+            <strong>
+              Smart Links
+            </strong>
+
+          </div>
+
+          <p>
+            Infraestrutura digital para empresas venderem,
+            organizarem clientes e gerenciarem agendamentos.
+          </p>
+
+        </div>
+
+        <div class="footer-links">
+
+          <div>
+
+            <h4>Produto</h4>
+
+            <a href="#beneficios">
+              Benefícios
+            </a>
+
+            <a href="#como-funciona">
+              Como Funciona
+            </a>
+
+            <a href="#modulos">
+              Recursos
+            </a>
+
+          </div>
+
+          <div>
+
+            <h4>Empresa</h4>
+
+            <a href="#">
+              Contato
+            </a>
+
+            <a href="#">
+              Instagram
+            </a>
+
+          </div>
+
+        </div>
+
+        <div class="footer-copy">
+
+          © 2026 Smart Links. Todos os direitos reservados.
+
+        </div>
+
+      </footer>
+
     </section>
     <section
       v-if="currentView === 'dashboard' && !user"
       class="auth-page"
     >
+
       <section class="auth-card">
         <p class="eyebrow">Smart Links</p>
 
@@ -1153,8 +1313,8 @@ onMounted(async () => {
               : 'Já tenho conta'
           }}
         </button>
-
       </section>
+
     </section>
 
     <section v-if="currentView === 'dashboard' && user"class="workspace">
