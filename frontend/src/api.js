@@ -24,8 +24,13 @@ async function request(path, options = {}) {
         headers,
     });
     if (!response.ok) {
-        const error = await response.json().catch(() => ({ message: "Request failed." }));
-        throw new Error(error.message ?? "Request failed.");
+        const error = await response
+            .json()
+            .catch(() => ({ message: "Request failed." }));
+        const requestError = new Error(error.message ?? "Request failed.");
+        requestError.status = response.status;
+        requestError.code = error.code;
+        throw requestError;
     }
     if (response.status === 204) {
         return undefined;
@@ -134,6 +139,24 @@ export const api = {
         return request(`/appointments/${id}/status`, {
             method: "PUT",
             body: JSON.stringify({ status }),
+        });
+    },
+    getSubscription() {
+        return request("/subscriptions");
+    },
+    createSubscriptionPayment(input) {
+        return request("/subscription-payment", {
+            method: "POST",
+            body: JSON.stringify(input),
+        });
+    },
+    getModule() {
+        return request("/module");
+    },
+    updateModule(module) {
+        return request("/module", {
+            method: "PATCH",
+            body: JSON.stringify({ module }),
         });
     },
     createProduct(input) {

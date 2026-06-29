@@ -1,4 +1,37 @@
 <script setup lang="ts">
+
+import {
+  ref,
+  computed,
+  watch,
+  onMounted,
+} from "vue";
+
+import {
+  api,
+  clearToken,
+  getToken,
+  setToken,
+  type Appointment,
+  type AppointmentStatus,
+  type Availability,
+  type CompanyPage,
+  type ModuleType,
+  type Product,
+  type ProductAnalytics,
+  type PublicProduct,
+  type Service,
+  type SessionUser,
+  type Subscription,
+  type SubscriptionPaymentResult,
+  type Weekday,
+} from "./api";
+
+import {
+  formatCurrency,
+  slugify,
+} from "./format";
+
 function goToDashboard() {  window.location.hash = "#/dashboard";}
 function scrollToBenefits() {
   document
@@ -7,12 +40,18 @@ function scrollToBenefits() {
       behavior: "smooth",
     });
 }
-import { computed, onMounted, ref } from "vue";
-import { api, clearToken, getToken, setToken, type Appointment, type AppointmentStatus, type Availability, type CompanyPage, type ProductAnalytics, type Product, type PublicProduct, type Service, type SessionUser, type Weekday } from "./api";
-import { formatCurrency, slugify } from "./format";
-
-
 type View =  | "landing"  | "dashboard"  | "company"  | "product";
+type DashboardTab =
+  | "dashboard"
+  | "company"
+  | "products"
+  | "analytics"
+  | "services"
+  | "availability"
+  | "agenda"
+  | "subscription"
+  | "settings"
+  | "support";
 
 const weekdayOptions: Array<{ value: Weekday; label: string }> = [
   { value: "MONDAY", label: "Segunda-feira" },
@@ -49,13 +88,17 @@ const uploadingProductImages = ref(false);
 const error = ref("");
 const notice = ref("");
 const authMode = ref<"login" | "register">("login");
-const dashboardTab = ref<"products" | "company" | "analytics" | "services" | "availability" | "agenda">("products");
+const dashboardTab = ref<DashboardTab>("dashboard");
+const selectedModule = ref<ModuleType | null>(null);
 const selectedProductId = ref("");
 const relatedSelection = ref<string[]>([]);
 const productSearch = ref("");
 const editingServiceId = ref("");
 const editingAvailabilityId = ref("");
 const selectedServiceId = ref("");
+const subscription = ref<Subscription | null>(null);
+const subscriptionPayment = ref<SubscriptionPaymentResult | null>(null);
+let subscriptionPolling: number | null = null;
 
 const authForm = ref({
   name: "",
@@ -100,6 +143,11 @@ const appointmentForm = ref({
   customerPhone: "",
 });
 
+const subscriptionForm = ref({
+  cpfCnpj: "",
+  billingType: "PIX" as "PIX" | "BOLETO",
+});
+
 const reservationForm = ref({
   customerName: "",
   customerPhone: "",
@@ -116,6 +164,167 @@ const companyForm = ref({
   numeroWhatsApp: "",
   endereco: "",
 });
+const dashboardSections = {
+  dashboard: {
+    title: "Dashboard",
+    subtitle: "Visão geral do seu módulo.",
+    counter: "Visão geral",
+  },
+
+  company: {
+    title: "Minha Empresa",
+    subtitle: "Gerencie as informações da sua empresa.",
+    counter: "Perfil",
+  },
+
+  products: {
+    title: "Produtos",
+    subtitle: "Gerencie seu catálogo e publique novos produtos.",
+    counter: () => `${products.value.length} produtos`,
+  },
+
+  analytics: {
+    title: "Analytics",
+    subtitle: "Acompanhe o desempenho dos seus produtos.",
+    counter: () => `${monitoredProducts.value} produtos`,
+  },
+
+  services: {
+    title: "Serviços",
+    subtitle: "Gerencie os serviços oferecidos pela empresa.",
+    counter: () => `${services.value.length} serviço(s)`,
+  },
+
+  availability: {
+    title: "Disponibilidade",
+    subtitle: "Defina os dias e horários de atendimento.",
+    counter: () => `${availability.value.length} horários`,
+  },
+
+  agenda: {
+    title: "Agenda",
+    subtitle: "Acompanhe e gerencie seus agendamentos.",
+    counter: () => `${appointments.value.length} agendamentos`,
+  },
+
+  subscription: {
+    title: "Mensalidade",
+    subtitle: "Gerencie sua assinatura Smart Links.",
+    counter: "R$97/mês",
+  },
+
+  settings: {
+    title: "Configurações",
+    subtitle: "Gerencie sua conta.",
+    counter: "Conta",
+  },
+
+  support: {
+    title: "Ajuda",
+    subtitle: "Central de ajuda da Smart Links.",
+    counter: "Suporte",
+  },
+} as const;
+
+const currentDashboardSection = computed(
+  () => dashboardSections[dashboardTab.value],
+);
+
+const currentDashboardCounter = computed(() => {
+  const counter = currentDashboardSection.value.counter;
+  return typeof counter === "function" ? counter() : counter;
+});
+
+const isSubscriptionActive = computed(
+  () => subscription.value?.status === "ACTIVE",
+);
+
+const needsModuleChoice = computed(
+  () =>
+    Boolean(user.value) &&
+    isSubscriptionActive.value &&
+    !selectedModule.value,
+);
+
+const canShowDashboardWorkspace = computed(
+  () =>
+    Boolean(user.value) &&
+    !needsModuleChoice.value,
+);
+
+const sidebarMode = computed(() => {
+  if (!user.value) {
+    return "none";
+  }
+
+  if (!isSubscriptionActive.value) {
+    return "none";
+  }
+
+  if (!selectedModule.value) {
+    return "none";
+  }
+
+  return selectedModule.value === "PAGES"
+    ? "pages"
+    : "agends";
+});
+
+const showPagesContent = computed(
+  () => selectedModule.value === "PAGES",
+);
+
+const showAgendsContent = computed(
+  () => selectedModule.value === "AGENDS",
+);
+
+const pagesTabs: DashboardTab[] = [
+  "dashboard",
+  "products",
+  "company",
+  "analytics",
+  "settings",
+];
+
+const agendsTabs: DashboardTab[] = [
+  "dashboard",
+  "services",
+  "availability",
+  "agenda",
+  "company",
+  "settings",
+];
+
+function normalizeDashboardTab() {
+  if (!user.value) {
+    dashboardTab.value = "dashboard";
+    return;
+  }
+
+  if (!isSubscriptionActive.value) {
+    dashboardTab.value = "subscription";
+    return;
+  }
+
+  if (!selectedModule.value) {
+    dashboardTab.value = "dashboard";
+    return;
+  }
+
+  const allowedTabs =
+    selectedModule.value === "PAGES"
+      ? pagesTabs
+      : agendsTabs;
+
+  if (!allowedTabs.includes(dashboardTab.value)) {
+    dashboardTab.value = "dashboard";
+  }
+}
+
+watch(
+  [user, subscription, selectedModule],
+  normalizeDashboardTab,
+);
 
 window.addEventListener("hashchange", () => {
   route.value = window.location.hash || "#/";
@@ -259,6 +468,74 @@ function showNotice(message: string) {
   error.value = "";
 }
 
+function openDashboard() {
+  dashboardTab.value = "dashboard";
+
+  if (selectedModule.value === "PAGES") {
+    loadAnalytics();
+  }
+}
+
+async function loadModule() {
+  const result = await api.getModule();
+  selectedModule.value = result.selectedModule;
+}
+
+async function loadModuleDataForSelected() {
+  if (selectedModule.value === "PAGES") {
+    await loadProducts();
+    await loadAnalytics();
+    return;
+  }
+
+  if (selectedModule.value === "AGENDS") {
+    await loadServices();
+    await loadAvailability();
+    await loadAppointments();
+  }
+}
+
+async function selectModule(module: ModuleType) {
+  loading.value = true;
+
+  try {
+    const result = await api.updateModule(module);
+    selectedModule.value = result.selectedModule;
+    dashboardTab.value = "dashboard";
+    await loadModuleDataForSelected();
+    showNotice("Módulo configurado.");
+  } catch (err) {
+    showError(
+      err instanceof Error
+        ? err.message
+        : "Nao foi possivel salvar o modulo.",
+    );
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function switchModule(module: ModuleType) {
+  if (module === selectedModule.value) return;
+
+  loading.value = true;
+
+  try {
+    const result = await api.updateModule(module);
+    selectedModule.value = result.selectedModule;
+    dashboardTab.value = "dashboard";
+    showNotice("Modulo alterado.");
+  } catch (err) {
+    showError(
+      err instanceof Error
+        ? err.message
+        : "Nao foi possivel trocar o modulo.",
+    );
+  } finally {
+    loading.value = false;
+  }
+}
+
 async function loadSession() {
   if (!getToken()) return;
 
@@ -278,10 +555,20 @@ async function loadSession() {
       endereco: profile.endereco ?? "",
     };
 
-    await loadProducts();
-    await loadServices();
-    await loadAvailability();
-    await loadAppointments();
+      await loadSubscription();
+
+      if (subscription.value?.status !== "ACTIVE") {
+          dashboardTab.value = "subscription";
+          return;
+      }
+
+      await loadModule();
+
+      if (!selectedModule.value) {
+        return;
+      }
+
+      await loadModuleDataForSelected();
   } catch {
     clearToken();
     user.value = null;
@@ -310,7 +597,22 @@ async function submitAuth() {
 
     setToken(session.token);
     user.value = session.user;
-    await loadProducts();
+    await loadSubscription();
+
+    if (subscription.value?.status !== "ACTIVE") {
+    dashboardTab.value = "subscription";
+    return;
+    }
+
+    await loadModule();
+
+    if (!selectedModule.value) {
+      showNotice("Sessao iniciada.");
+      return;
+    }
+
+    await loadModuleDataForSelected();
+
     showNotice("Sessao iniciada.");
   } catch (err) {
     showError(err instanceof Error ? err.message : "Nao foi possivel autenticar.");
@@ -337,6 +639,87 @@ async function loadAvailability() {
 async function loadAppointments() {
   if (!user.value) return;
   appointments.value = await api.listAppointments();
+}
+
+async function loadSubscription() {
+  try {
+    const result = await api.getSubscription();
+    subscription.value = result;
+
+    if (result.paymentMethod) {
+      subscriptionForm.value.billingType = result.paymentMethod;
+    }
+  } catch (err) {
+    showError(
+      err instanceof Error
+        ? err.message
+        : "Nao foi possivel carregar a assinatura.",
+    );
+  }
+}
+
+async function generateSubscriptionPayment() {
+  loading.value = true;
+
+  try {
+    subscriptionPayment.value = await api.createSubscriptionPayment({
+      cpfCnpj: subscriptionForm.value.cpfCnpj,
+      billingType: subscriptionForm.value.billingType,
+    });
+    await loadSubscription();
+    startSubscriptionPolling();
+    showNotice("Cobranca gerada.");
+  } catch (err) {
+    showError(
+      err instanceof Error
+        ? err.message
+        : "Nao foi possivel gerar a cobranca.",
+    );
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function copyPaymentCode(value: string) {
+  try {
+    await navigator.clipboard.writeText(value);
+    showNotice("Codigo copiado.");
+  } catch {
+    showError("Nao foi possivel copiar o codigo.");
+  }
+}
+
+async function startSubscriptionPolling() {
+  if (subscriptionPolling) {
+    clearInterval(subscriptionPolling);
+  }
+
+  subscriptionPolling = window.setInterval(async () => {
+    await loadSubscription();
+
+    if (subscription.value?.status !== "ACTIVE") {
+      return;
+    }
+
+    clearInterval(subscriptionPolling!);
+    subscriptionPolling = null;
+
+    await loadModule();
+
+    if (!selectedModule.value) {
+      subscriptionPayment.value = null;
+      showNotice("Pagamento confirmado! Escolha seu modulo.");
+      return;
+    }
+
+    await loadModuleDataForSelected();
+
+    dashboardTab.value = "dashboard";
+
+    subscriptionPayment.value = null;
+
+    showNotice("Pagamento confirmado! Bem-vindo ao Smart Links.");
+  }, 5000);
 }
 
 async function loadAnalytics() {
@@ -797,6 +1180,7 @@ function logout() {
   clearToken();
   user.value = null;
   products.value = [];
+  selectedModule.value = null;
 }
 async function copyProductLink(productSlug: string) {
   try {
@@ -860,6 +1244,13 @@ async function saveRelatedProducts() {
 onMounted(async () => {
   await loadSession();
   await loadRoute();
+
+  if (
+    dashboardTab.value === "subscription" &&
+    subscription.value?.status === "PENDING"
+  ) {
+    startSubscriptionPolling();
+  }
 });
 </script>
 
@@ -1317,11 +1708,71 @@ onMounted(async () => {
 
     </section>
 
-    <section v-if="currentView === 'dashboard' && user"class="workspace">
+      <section
+        v-if="
+          currentView === 'dashboard' &&
+          user &&
+          isSubscriptionActive &&
+          needsModuleChoice
+        "
+        class="choose-module-page">
+        <div class="choose-module-header">
+        <p class="eyebrow">Smart Links</p>
+        <h1>Escolha seu módulo</h1>
+        <p class="muted">
+          Selecione como deseja usar a plataforma. Você pode trocar depois em Configurações.
+        </p>
+      </div>
 
+      <div class="choose-module-grid">
+        <article class="choose-module-card">
+          <p class="eyebrow">Smart Pages</p>
+          <h2>Produtos e vendas</h2>
+          <ul>
+            <li>Produtos</li>
+            <li>Reservas</li>
+            <li>Analytics</li>
+            <li>WhatsApp</li>
+          </ul>
+          <button
+            class="primary-button"
+            type="button"
+            :disabled="loading"
+            @click="selectModule('PAGES')"
+          >
+            Começar
+          </button>
+        </article>
+
+        <article class="choose-module-card">
+          <p class="eyebrow">Smart Agends</p>
+          <h2>Serviços e agenda</h2>
+          <ul>
+            <li>Serviços</li>
+            <li>Agenda</li>
+            <li>Disponibilidade</li>
+            <li>Agendamentos</li>
+          </ul>
+          <button
+            class="primary-button"
+            type="button"
+            :disabled="loading"
+            @click="selectModule('AGENDS')"
+          >
+            Começar
+          </button>
+        </article>
+      </div>
+    </section>
+
+  <section
+    v-if="currentView === 'dashboard' && canShowDashboardWorkspace"
+    class="workspace"
+    :class="{ 'workspace-single': sidebarMode === 'none' }"
+  >
       <aside
-      v-if="user"
-      class="dashboard-sidebar"
+        v-if="sidebarMode !== 'none'"
+        class="dashboard-sidebar"
     >
       <div class="sidebar-brand">
 
@@ -1337,47 +1788,69 @@ onMounted(async () => {
 
       </div>
 
-      <nav class="sidebar-nav">
+      <nav
+        v-if="sidebarMode === 'pages'"
+        class="sidebar-nav"
+      >
+        <button
+          type="button"
+          class="sidebar-item"
+          :class="{ active: dashboardTab === 'dashboard' }"
+          @click="openDashboard()"
+        >
+          Dashboard
+        </button>
 
         <button
           type="button"
           class="sidebar-item"
-          :class="{
-            active: dashboardTab === 'products'
-          }"
+          :class="{ active: dashboardTab === 'products' }"
           @click="dashboardTab = 'products'"
         >
-          📦 Produtos
+          Produtos
         </button>
 
         <button
           type="button"
           class="sidebar-item"
-          :class="{
-            active: dashboardTab === 'company'
-          }"
-          @click="dashboardTab = 'company'"
+          :class="{ active: dashboardTab === 'analytics' }"
+          @click="dashboardTab = 'analytics'; loadAnalytics()"
         >
-          🏢 Minha Empresa
+          Analytics
         </button>
 
-      <button
-        type="button"
-        class="sidebar-item"
-        :class="{
-          active: dashboardTab === 'analytics'
-        }"
-        @click="
-          dashboardTab = 'analytics';
-          loadAnalytics();
-        "
-      >
-        📈 Analytics
-      </button>
+        <button
+          type="button"
+          class="sidebar-item"
+          :class="{ active: dashboardTab === 'company' }"
+          @click="dashboardTab = 'company'"
+        >
+          Minha Empresa
+        </button>
 
+        <button
+          type="button"
+          class="sidebar-item"
+          :class="{ active: dashboardTab === 'settings' }"
+          @click="dashboardTab = 'settings'"
+        >
+          Configurações
+        </button>
       </nav>
 
-      <nav class="sidebar-nav smart-agends-nav">
+        <nav
+          v-if="sidebarMode === 'agends'"
+          class="sidebar-nav"
+        >
+        <button
+          type="button"
+          class="sidebar-item"
+          :class="{ active: dashboardTab === 'dashboard' }"
+          @click="openDashboard()"
+        >
+          Dashboard
+        </button>
+
         <button
           type="button"
           class="sidebar-item"
@@ -1404,6 +1877,24 @@ onMounted(async () => {
         >
           Agenda
         </button>
+
+        <button
+          type="button"
+          class="sidebar-item"
+          :class="{ active: dashboardTab === 'company' }"
+          @click="dashboardTab = 'company'"
+        >
+          Minha Empresa
+        </button>
+
+        <button
+          type="button"
+          class="sidebar-item"
+          :class="{ active: dashboardTab === 'settings' }"
+          @click="dashboardTab = 'settings'"
+        >
+          Configurações
+        </button>
       </nav>
 
       <div class="sidebar-footer">
@@ -1424,7 +1915,11 @@ onMounted(async () => {
 
     </aside>
         
-      <section v-if="user"class="main-panel">
+      <section  v-if="
+        user &&
+        !needsModuleChoice
+      "
+      class="main-panel">
         <div class="dashboard-header">
 
         <div>
@@ -1433,58 +1928,65 @@ onMounted(async () => {
           </p>
 
           <h1 class="dashboard-title">
-          {{
-            dashboardTab === 'products'
-              ? 'Produtos'
-              : dashboardTab === 'analytics'
-                ? 'Analytics'
-                : dashboardTab === 'services'
-                  ? 'Serviços'
-                  : dashboardTab === 'availability'
-                    ? 'Disponibilidade'
-                    : dashboardTab === 'agenda'
-                      ? 'Agenda'
-                      : 'Minha Empresa'
-          }}
+            {{ currentDashboardSection.title }}
           </h1>
 
           <p class="dashboard-subtitle">
-          {{
-            dashboardTab === 'products'
-              ? 'Gerencie seu catálogo e publique novos produtos.'
-              : dashboardTab === 'analytics'
-                ? 'Acompanhe o desempenho dos seus produtos.'
-                : dashboardTab === 'services'
-                  ? 'Gerencie os servicos oferecidos pela empresa.'
-                  : dashboardTab === 'availability'
-                    ? 'Defina os dias e horários de atendimento.'
-                    : dashboardTab === 'agenda'
-                      ? 'Acompanhe e gerencie seus agendamentos.'
-                      : 'Gerencie as informações da sua empresa.'
-          }}
+            {{ currentDashboardSection.subtitle }}
           </p>
         </div>
 
         <div class="dashboard-counter">
-        {{
-          dashboardTab === 'products'
-            ? `${products.length} produtos`
-            : dashboardTab === 'analytics'
-              ? `${monitoredProducts} produtos`
-              : dashboardTab === 'services'
-                ? `${services.length} serviço`
-                : dashboardTab === 'availability'
-                  ? `${availability.length} horarios`
-                  : dashboardTab === 'agenda'
-                    ? `${appointments.length} agendamentos`
-                    : 'Perfil'
-        }}
+          {{ currentDashboardCounter }}
         </div>
 
       </div>
 
+        <div
+          v-if="dashboardTab === 'dashboard' && showPagesContent"
+        >
+          <div class="analytics-cards">
+            <div class="analytics-card">
+              <span>Produtos</span>
+              <strong>{{ products.length }}</strong>
+            </div>
+
+            <div class="analytics-card">
+              <span>Total de Cliques</span>
+              <strong>{{ totalClicks }}</strong>
+            </div>
+
+            <div class="analytics-card">
+              <span>Total de Reservas</span>
+              <strong>{{ totalReservations }}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div
+          v-if="dashboardTab === 'dashboard' && selectedModule === 'AGENDS'"
+          class="analytics-page"
+        >
+          <div class="analytics-cards">
+            <div class="analytics-card">
+              <span>Serviços</span>
+              <strong>{{ services.length }}</strong>
+            </div>
+
+            <div class="analytics-card">
+              <span>Agendamentos Hoje</span>
+              <strong>{{ todayAppointments.length }}</strong>
+            </div>
+
+            <div class="analytics-card">
+              <span>Horários Cadastrados</span>
+              <strong>{{ availability.length }}</strong>
+            </div>
+          </div>
+        </div>
+
         <form
-          v-if="user && dashboardTab === 'products'"
+          v-if="user && dashboardTab === 'products' && showPagesContent"
           class="product-form"
           @submit.prevent="createProduct"
         >          <input v-model="productForm.name" required placeholder="Nome do produto" />
@@ -1537,7 +2039,7 @@ onMounted(async () => {
         </form>
 
           <div
-            v-if="dashboardTab === 'products'"
+            v-if="dashboardTab === 'products' && showPagesContent"
             class="product-list"
           >
           <article v-for="product in products" :key="product.id" class="product-card">
@@ -1635,7 +2137,7 @@ onMounted(async () => {
                   </article>
         </div>
         <div
-          v-if="dashboardTab === 'analytics'"
+          v-if="dashboardTab === 'analytics' && showPagesContent"
           class="analytics-page"
         >
           <div class="analytics-cards">
@@ -1694,7 +2196,7 @@ onMounted(async () => {
         </div>
 
         <div
-          v-if="dashboardTab === 'services'"
+          v-if="dashboardTab === 'services' && showAgendsContent"
           class="services-dashboard"
         >
           <form
@@ -1843,7 +2345,7 @@ onMounted(async () => {
         </div>
 
         <div
-          v-if="dashboardTab === 'availability'"
+          v-if="dashboardTab === 'availability' && showAgendsContent"
           class="availability-dashboard"
         >
           <form
@@ -1944,7 +2446,7 @@ onMounted(async () => {
         </div>
 
         <div
-          v-if="dashboardTab === 'agenda'"
+          v-if="dashboardTab === 'agenda' && showAgendsContent"
           class="agenda-dashboard"
         >
           <section class="agenda-group">
@@ -2148,6 +2650,215 @@ onMounted(async () => {
               </button>
             </form>
           </div>
+        </div>
+        <div
+          v-if="dashboardTab === 'subscription'"
+          class="subscription-page"
+        >
+          <div class="subscription-card">
+            <div class="subscription-header">
+              <div>
+                <p class="eyebrow">ASSINATURA</p>
+                <h2>{{ subscription?.plan.name ?? 'Smart Links' }}</h2>
+                <p>
+                  Sua assinatura mantém sua empresa online e libera todos os recursos da plataforma.
+                </p>
+              </div>
+
+              <span
+                class="subscription-status"
+                :class="(subscription?.status ?? 'PENDING').toLowerCase()"
+              >
+                {{ subscription?.status ?? 'PENDING' }}
+              </span>
+            </div>
+
+            <div class="subscription-grid">
+              <div class="subscription-item">
+                <span>Plano</span>
+                <strong>{{ subscription?.plan.name ?? 'Smart Links' }}</strong>
+              </div>
+
+              <div class="subscription-item">
+                <span>Valor</span>
+                <strong>
+                  {{ formatCurrency(subscription?.plan.price ?? 97) }}/mês
+                </strong>
+              </div>
+
+              <div class="subscription-item">
+                <span>Próximo vencimento</span>
+                <strong>{{ subscription?.nextDueDate?.slice(0, 10) ?? 'A definir' }}</strong>
+              </div>
+
+              <div class="subscription-item">
+                <span>Forma de pagamento</span>
+                <strong>{{ subscription?.paymentMethod ?? 'Não definida' }}</strong>
+              </div>
+            </div>
+
+            <form
+              v-if="!subscriptionPayment"
+              class="subscription-payment-form"
+              @submit.prevent="generateSubscriptionPayment"
+            >
+              <div>
+                <h3>
+                  {{ subscription?.asaasSubscriptionId ? 'Consultar cobrança' : 'Gerar primeira cobrança' }}
+                </h3>
+                <p class="muted">
+                  Informe o documento do titular e escolha a forma de pagamento.
+                </p>
+              </div>
+
+              <input
+                v-model="subscriptionForm.cpfCnpj"
+                required
+                inputmode="numeric"
+                placeholder="CPF ou CNPJ"
+              />
+
+              <div class="payment-method-control">
+                <label :class="{ active: subscriptionForm.billingType === 'PIX' }">
+                  <input
+                    v-model="subscriptionForm.billingType"
+                    type="radio"
+                    value="PIX"
+                  />
+                  PIX
+                </label>
+                <label :class="{ active: subscriptionForm.billingType === 'BOLETO' }">
+                  <input
+                    v-model="subscriptionForm.billingType"
+                    type="radio"
+                    value="BOLETO"
+                  />
+                  Boleto
+                </label>
+              </div>
+
+              <button
+                class="primary-button"
+                type="submit"
+                :disabled="loading"
+              >
+                {{ loading ? 'Gerando...' : 'Gerar cobrança' }}
+              </button>
+            </form>
+
+            <div
+              v-if="subscriptionPayment"
+              class="payment-result"
+            >
+              <div>
+                <p class="eyebrow">COBRANÇA GERADA</p>
+                <h3>{{ formatCurrency(subscriptionPayment.payment.value) }}</h3>
+                <p class="muted">
+                  Vencimento: {{ subscriptionPayment.payment.dueDate }}
+                </p>
+              </div>
+
+              <template v-if="subscriptionPayment.pix">
+                <img
+                  class="pix-qr-code"
+                  :src="`data:image/png;base64,${subscriptionPayment.pix.encodedImage}`"
+                  alt="QR Code PIX"
+                />
+                <textarea
+                  readonly
+                  :value="subscriptionPayment.pix.payload"
+                />
+                <button
+                  class="primary-button"
+                  type="button"
+                  @click="copyPaymentCode(subscriptionPayment.pix.payload)"
+                >
+                  Copiar PIX
+                </button>
+              </template>
+
+              <template v-if="subscriptionPayment.boleto">
+                <textarea
+                  readonly
+                  :value="subscriptionPayment.boleto.identificationField"
+                />
+                <button
+                  class="primary-button"
+                  type="button"
+                  @click="copyPaymentCode(subscriptionPayment.boleto.identificationField)"
+                >
+                  Copiar linha digitável
+                </button>
+                <a
+                  v-if="subscriptionPayment.boleto.url"
+                  class="primary-link"
+                  :href="subscriptionPayment.boleto.url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Abrir boleto
+                </a>
+              </template>
+            </div>
+
+          </div>
+        </div>
+
+        <div
+          v-if="dashboardTab === 'settings'"
+          class="settings-page"
+        >
+
+          <h2>Configurações</h2>
+
+          <div
+            v-if="isSubscriptionActive && selectedModule"
+            class="settings-module-switch"
+          >
+            <h3>Trocar módulo</h3>
+            <p class="muted">
+              Altere entre Smart Pages e Smart Agends sem novo pagamento.
+            </p>
+
+            <div class="choose-module-grid settings-module-grid">
+              <article
+                class="choose-module-card"
+                :class="{ selected: selectedModule === 'PAGES' }"
+              >
+                <p class="eyebrow">Smart Pages</p>
+                <h2>Produtos e vendas</h2>
+                <button
+                  class="primary-button"
+                  type="button"
+                  :disabled="loading || selectedModule === 'PAGES'"
+                  @click="switchModule('PAGES')"
+                >
+                  {{ selectedModule === 'PAGES' ? 'Módulo atual' : 'Usar Smart Pages' }}
+                </button>
+              </article>
+
+              <article
+                class="choose-module-card"
+                :class="{ selected: selectedModule === 'AGENDS' }"
+              >
+                <p class="eyebrow">Smart Agends</p>
+                <h2>Serviços e agenda</h2>
+                <button
+                  class="primary-button"
+                  type="button"
+                  :disabled="loading || selectedModule === 'AGENDS'"
+                  @click="switchModule('AGENDS')"
+                >
+                  {{ selectedModule === 'AGENDS' ? 'Módulo atual' : 'Usar Smart Agends' }}
+                </button>
+              </article>
+            </div>
+          </div>
+
+          <p v-else class="muted">
+            Configurações da conta em desenvolvimento.
+          </p>
+
         </div>
       </section>
     </section>

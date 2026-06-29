@@ -1,6 +1,14 @@
-import { computed, onMounted, ref } from "vue";
-import { api, clearToken, getToken, setToken } from "./api";
-import { formatCurrency, slugify } from "./format";
+import { ref, computed, watch, onMounted, } from "vue";
+import { api, clearToken, getToken, setToken, } from "./api";
+import { formatCurrency, slugify, } from "./format";
+function goToDashboard() { window.location.hash = "#/dashboard"; }
+function scrollToBenefits() {
+    document
+        .getElementById("beneficios")
+        ?.scrollIntoView({
+        behavior: "smooth",
+    });
+}
 const weekdayOptions = [
     { value: "MONDAY", label: "Segunda-feira" },
     { value: "TUESDAY", label: "Terca-feira" },
@@ -34,13 +42,17 @@ const uploadingProductImages = ref(false);
 const error = ref("");
 const notice = ref("");
 const authMode = ref("login");
-const dashboardTab = ref("products");
+const dashboardTab = ref("dashboard");
+const selectedModule = ref(null);
 const selectedProductId = ref("");
 const relatedSelection = ref([]);
 const productSearch = ref("");
 const editingServiceId = ref("");
 const editingAvailabilityId = ref("");
 const selectedServiceId = ref("");
+const subscription = ref(null);
+const subscriptionPayment = ref(null);
+let subscriptionPolling = null;
 const authForm = ref({
     name: "",
     email: "",
@@ -79,6 +91,10 @@ const appointmentForm = ref({
     customerName: "",
     customerPhone: "",
 });
+const subscriptionForm = ref({
+    cpfCnpj: "",
+    billingType: "PIX",
+});
 const reservationForm = ref({
     customerName: "",
     customerPhone: "",
@@ -94,6 +110,121 @@ const companyForm = ref({
     numeroWhatsApp: "",
     endereco: "",
 });
+const dashboardSections = {
+    dashboard: {
+        title: "Dashboard",
+        subtitle: "Visão geral do seu módulo.",
+        counter: "Visão geral",
+    },
+    company: {
+        title: "Minha Empresa",
+        subtitle: "Gerencie as informações da sua empresa.",
+        counter: "Perfil",
+    },
+    products: {
+        title: "Produtos",
+        subtitle: "Gerencie seu catálogo e publique novos produtos.",
+        counter: () => `${products.value.length} produtos`,
+    },
+    analytics: {
+        title: "Analytics",
+        subtitle: "Acompanhe o desempenho dos seus produtos.",
+        counter: () => `${monitoredProducts.value} produtos`,
+    },
+    services: {
+        title: "Serviços",
+        subtitle: "Gerencie os serviços oferecidos pela empresa.",
+        counter: () => `${services.value.length} serviço(s)`,
+    },
+    availability: {
+        title: "Disponibilidade",
+        subtitle: "Defina os dias e horários de atendimento.",
+        counter: () => `${availability.value.length} horários`,
+    },
+    agenda: {
+        title: "Agenda",
+        subtitle: "Acompanhe e gerencie seus agendamentos.",
+        counter: () => `${appointments.value.length} agendamentos`,
+    },
+    subscription: {
+        title: "Mensalidade",
+        subtitle: "Gerencie sua assinatura Smart Links.",
+        counter: "R$97/mês",
+    },
+    settings: {
+        title: "Configurações",
+        subtitle: "Gerencie sua conta.",
+        counter: "Conta",
+    },
+    support: {
+        title: "Ajuda",
+        subtitle: "Central de ajuda da Smart Links.",
+        counter: "Suporte",
+    },
+};
+const currentDashboardSection = computed(() => dashboardSections[dashboardTab.value]);
+const currentDashboardCounter = computed(() => {
+    const counter = currentDashboardSection.value.counter;
+    return typeof counter === "function" ? counter() : counter;
+});
+const isSubscriptionActive = computed(() => subscription.value?.status === "ACTIVE");
+const needsModuleChoice = computed(() => Boolean(user.value) &&
+    isSubscriptionActive.value &&
+    !selectedModule.value);
+const canShowDashboardWorkspace = computed(() => Boolean(user.value) &&
+    !needsModuleChoice.value);
+const sidebarMode = computed(() => {
+    if (!user.value) {
+        return "none";
+    }
+    if (!isSubscriptionActive.value) {
+        return "none";
+    }
+    if (!selectedModule.value) {
+        return "none";
+    }
+    return selectedModule.value === "PAGES"
+        ? "pages"
+        : "agends";
+});
+const showPagesContent = computed(() => selectedModule.value === "PAGES");
+const showAgendsContent = computed(() => selectedModule.value === "AGENDS");
+const pagesTabs = [
+    "dashboard",
+    "products",
+    "company",
+    "analytics",
+    "settings",
+];
+const agendsTabs = [
+    "dashboard",
+    "services",
+    "availability",
+    "agenda",
+    "company",
+    "settings",
+];
+function normalizeDashboardTab() {
+    if (!user.value) {
+        dashboardTab.value = "dashboard";
+        return;
+    }
+    if (!isSubscriptionActive.value) {
+        dashboardTab.value = "subscription";
+        return;
+    }
+    if (!selectedModule.value) {
+        dashboardTab.value = "dashboard";
+        return;
+    }
+    const allowedTabs = selectedModule.value === "PAGES"
+        ? pagesTabs
+        : agendsTabs;
+    if (!allowedTabs.includes(dashboardTab.value)) {
+        dashboardTab.value = "dashboard";
+    }
+}
+watch([user, subscription, selectedModule], normalizeDashboardTab);
 window.addEventListener("hashchange", () => {
     route.value = window.location.hash || "#/";
     loadRoute();
@@ -187,6 +318,65 @@ function showNotice(message) {
     notice.value = message;
     error.value = "";
 }
+function openDashboard() {
+    dashboardTab.value = "dashboard";
+    if (selectedModule.value === "PAGES") {
+        loadAnalytics();
+    }
+}
+async function loadModule() {
+    const result = await api.getModule();
+    selectedModule.value = result.selectedModule;
+}
+async function loadModuleDataForSelected() {
+    if (selectedModule.value === "PAGES") {
+        await loadProducts();
+        await loadAnalytics();
+        return;
+    }
+    if (selectedModule.value === "AGENDS") {
+        await loadServices();
+        await loadAvailability();
+        await loadAppointments();
+    }
+}
+async function selectModule(module) {
+    loading.value = true;
+    try {
+        const result = await api.updateModule(module);
+        selectedModule.value = result.selectedModule;
+        dashboardTab.value = "dashboard";
+        await loadModuleDataForSelected();
+        showNotice("Módulo configurado.");
+    }
+    catch (err) {
+        showError(err instanceof Error
+            ? err.message
+            : "Nao foi possivel salvar o modulo.");
+    }
+    finally {
+        loading.value = false;
+    }
+}
+async function switchModule(module) {
+    if (module === selectedModule.value)
+        return;
+    loading.value = true;
+    try {
+        const result = await api.updateModule(module);
+        selectedModule.value = result.selectedModule;
+        dashboardTab.value = "dashboard";
+        showNotice("Modulo alterado.");
+    }
+    catch (err) {
+        showError(err instanceof Error
+            ? err.message
+            : "Nao foi possivel trocar o modulo.");
+    }
+    finally {
+        loading.value = false;
+    }
+}
 async function loadSession() {
     if (!getToken())
         return;
@@ -203,10 +393,16 @@ async function loadSession() {
             numeroWhatsApp: profile.numeroWhatsApp ?? "",
             endereco: profile.endereco ?? "",
         };
-        await loadProducts();
-        await loadServices();
-        await loadAvailability();
-        await loadAppointments();
+        await loadSubscription();
+        if (subscription.value?.status !== "ACTIVE") {
+            dashboardTab.value = "subscription";
+            return;
+        }
+        await loadModule();
+        if (!selectedModule.value) {
+            return;
+        }
+        await loadModuleDataForSelected();
     }
     catch {
         clearToken();
@@ -232,7 +428,17 @@ async function submitAuth() {
             });
         setToken(session.token);
         user.value = session.user;
-        await loadProducts();
+        await loadSubscription();
+        if (subscription.value?.status !== "ACTIVE") {
+            dashboardTab.value = "subscription";
+            return;
+        }
+        await loadModule();
+        if (!selectedModule.value) {
+            showNotice("Sessao iniciada.");
+            return;
+        }
+        await loadModuleDataForSelected();
         showNotice("Sessao iniciada.");
     }
     catch (err) {
@@ -261,6 +467,72 @@ async function loadAppointments() {
     if (!user.value)
         return;
     appointments.value = await api.listAppointments();
+}
+async function loadSubscription() {
+    try {
+        const result = await api.getSubscription();
+        subscription.value = result;
+        if (result.paymentMethod) {
+            subscriptionForm.value.billingType = result.paymentMethod;
+        }
+    }
+    catch (err) {
+        showError(err instanceof Error
+            ? err.message
+            : "Nao foi possivel carregar a assinatura.");
+    }
+}
+async function generateSubscriptionPayment() {
+    loading.value = true;
+    try {
+        subscriptionPayment.value = await api.createSubscriptionPayment({
+            cpfCnpj: subscriptionForm.value.cpfCnpj,
+            billingType: subscriptionForm.value.billingType,
+        });
+        await loadSubscription();
+        startSubscriptionPolling();
+        showNotice("Cobranca gerada.");
+    }
+    catch (err) {
+        showError(err instanceof Error
+            ? err.message
+            : "Nao foi possivel gerar a cobranca.");
+    }
+    finally {
+        loading.value = false;
+    }
+}
+async function copyPaymentCode(value) {
+    try {
+        await navigator.clipboard.writeText(value);
+        showNotice("Codigo copiado.");
+    }
+    catch {
+        showError("Nao foi possivel copiar o codigo.");
+    }
+}
+async function startSubscriptionPolling() {
+    if (subscriptionPolling) {
+        clearInterval(subscriptionPolling);
+    }
+    subscriptionPolling = window.setInterval(async () => {
+        await loadSubscription();
+        if (subscription.value?.status !== "ACTIVE") {
+            return;
+        }
+        clearInterval(subscriptionPolling);
+        subscriptionPolling = null;
+        await loadModule();
+        if (!selectedModule.value) {
+            subscriptionPayment.value = null;
+            showNotice("Pagamento confirmado! Escolha seu modulo.");
+            return;
+        }
+        await loadModuleDataForSelected();
+        dashboardTab.value = "dashboard";
+        subscriptionPayment.value = null;
+        showNotice("Pagamento confirmado! Bem-vindo ao Smart Links.");
+    }, 5000);
 }
 async function loadAnalytics() {
     if (!user.value)
@@ -659,6 +931,7 @@ function logout() {
     clearToken();
     user.value = null;
     products.value = [];
+    selectedModule.value = null;
 }
 async function copyProductLink(productSlug) {
     try {
@@ -702,6 +975,10 @@ async function saveRelatedProducts() {
 onMounted(async () => {
     await loadSession();
     await loadRoute();
+    if (dashboardTab.value === "subscription" &&
+        subscription.value?.status === "PENDING") {
+        startSubscriptionPolling();
+    }
 });
 const __VLS_ctx = {
     ...{},
@@ -771,10 +1048,45 @@ if (__VLS_ctx.currentView === 'landing') {
         ...{ class: "landing-page" },
     });
     /** @type {__VLS_StyleScopedClasses['landing-page']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.header, __VLS_intrinsics.header)({
+        ...{ class: "landing-navbar" },
+    });
+    /** @type {__VLS_StyleScopedClasses['landing-navbar']} */ ;
     __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "landing-logo" },
+    });
+    /** @type {__VLS_StyleScopedClasses['landing-logo']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+        ...{ class: "brand-mark" },
+    });
+    /** @type {__VLS_StyleScopedClasses['brand-mark']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.nav, __VLS_intrinsics.nav)({
+        ...{ class: "landing-menu" },
+    });
+    /** @type {__VLS_StyleScopedClasses['landing-menu']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.a, __VLS_intrinsics.a)({
+        href: "#beneficios",
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.a, __VLS_intrinsics.a)({
+        href: "#como-funciona",
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.a, __VLS_intrinsics.a)({
+        href: "#modulos",
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (__VLS_ctx.goToDashboard) },
+        ...{ class: "primary-button" },
+    });
+    /** @type {__VLS_StyleScopedClasses['primary-button']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
         ...{ class: "landing-hero" },
     });
     /** @type {__VLS_StyleScopedClasses['landing-hero']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "hero-content" },
+    });
+    /** @type {__VLS_StyleScopedClasses['hero-content']} */ ;
     __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
         ...{ class: "eyebrow" },
     });
@@ -792,54 +1104,225 @@ if (__VLS_ctx.currentView === 'landing') {
     });
     /** @type {__VLS_StyleScopedClasses['landing-actions']} */ ;
     __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-        ...{ onClick: (...[$event]) => {
-                if (!(__VLS_ctx.currentView === 'landing'))
-                    return;
-                __VLS_ctx.route = '#/dashboard';
-                // @ts-ignore
-                [currentView, currentView, user, user, publicCompanyUrl, logout, error, error, notice, notice, route,];
-            } },
+        ...{ onClick: (__VLS_ctx.goToDashboard) },
         ...{ class: "primary-button" },
     });
     /** @type {__VLS_StyleScopedClasses['primary-button']} */ ;
-    __VLS_asFunctionalElement1(__VLS_intrinsics.a, __VLS_intrinsics.a)({
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (__VLS_ctx.scrollToBenefits) },
         ...{ class: "ghost-button" },
-        href: "#beneficios",
     });
     /** @type {__VLS_StyleScopedClasses['ghost-button']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "hero-image" },
+    });
+    /** @type {__VLS_StyleScopedClasses['hero-image']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.img)({
+        src: "/dashboard-preview.png",
+        alt: "Dashboard Smart Links",
+    });
     __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
         id: "beneficios",
         ...{ class: "landing-benefits" },
     });
     /** @type {__VLS_StyleScopedClasses['landing-benefits']} */ ;
-    __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
-        ...{ class: "landing-card" },
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "section-header" },
     });
-    /** @type {__VLS_StyleScopedClasses['landing-card']} */ ;
+    /** @type {__VLS_StyleScopedClasses['section-header']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+        ...{ class: "section-eyebrow" },
+    });
+    /** @type {__VLS_StyleScopedClasses['section-eyebrow']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({
+        ...{ class: "section-title" },
+    });
+    /** @type {__VLS_StyleScopedClasses['section-title']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.img)({
+        ...{ class: "benefits-image" },
+        src: "/benefits-grid.png",
+        alt: "Benefícios Smart Links",
+    });
+    /** @type {__VLS_StyleScopedClasses['benefits-image']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+        id: "como-funciona",
+        ...{ class: "landing-steps" },
+    });
+    /** @type {__VLS_StyleScopedClasses['landing-steps']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+        ...{ class: "section-eyebrow" },
+    });
+    /** @type {__VLS_StyleScopedClasses['section-eyebrow']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({
+        ...{ class: "section-title" },
+    });
+    /** @type {__VLS_StyleScopedClasses['section-title']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.img)({
+        ...{ class: "steps-image" },
+        src: "/steps-grid.png",
+        alt: "Passos Smart Links",
+    });
+    /** @type {__VLS_StyleScopedClasses['steps-image']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+        id: "modulos",
+        ...{ class: "landing-modules" },
+    });
+    /** @type {__VLS_StyleScopedClasses['landing-modules']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "module-item" },
+    });
+    /** @type {__VLS_StyleScopedClasses['module-item']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "module-info" },
+    });
+    /** @type {__VLS_StyleScopedClasses['module-info']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+        ...{ class: "section-eyebrow" },
+    });
+    /** @type {__VLS_StyleScopedClasses['section-eyebrow']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({
+        ...{ class: "section-title" },
+    });
+    /** @type {__VLS_StyleScopedClasses['section-title']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (__VLS_ctx.goToDashboard) },
+        ...{ class: "primary-button" },
+    });
+    /** @type {__VLS_StyleScopedClasses['primary-button']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.img)({
+        src: "/smart-pages.png",
+        alt: "Smart Pages",
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "module-item" },
+    });
+    /** @type {__VLS_StyleScopedClasses['module-item']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "module-info" },
+    });
+    /** @type {__VLS_StyleScopedClasses['module-info']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+        ...{ class: "section-eyebrow" },
+    });
+    /** @type {__VLS_StyleScopedClasses['section-eyebrow']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({
+        ...{ class: "section-title" },
+    });
+    /** @type {__VLS_StyleScopedClasses['section-title']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (__VLS_ctx.goToDashboard) },
+        ...{ class: "primary-button" },
+    });
+    /** @type {__VLS_StyleScopedClasses['primary-button']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.img)({
+        src: "/smart-agends.png",
+        alt: "Smart Agends",
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+        ...{ class: "landing-faq" },
+    });
+    /** @type {__VLS_StyleScopedClasses['landing-faq']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "faq-item" },
+    });
+    /** @type {__VLS_StyleScopedClasses['faq-item']} */ ;
     __VLS_asFunctionalElement1(__VLS_intrinsics.h3, __VLS_intrinsics.h3)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
-    __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
-        ...{ class: "landing-card" },
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "faq-item" },
     });
-    /** @type {__VLS_StyleScopedClasses['landing-card']} */ ;
+    /** @type {__VLS_StyleScopedClasses['faq-item']} */ ;
     __VLS_asFunctionalElement1(__VLS_intrinsics.h3, __VLS_intrinsics.h3)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
-    __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
-        ...{ class: "landing-card" },
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "faq-item" },
     });
-    /** @type {__VLS_StyleScopedClasses['landing-card']} */ ;
+    /** @type {__VLS_StyleScopedClasses['faq-item']} */ ;
     __VLS_asFunctionalElement1(__VLS_intrinsics.h3, __VLS_intrinsics.h3)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "faq-item" },
+    });
+    /** @type {__VLS_StyleScopedClasses['faq-item']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.h3, __VLS_intrinsics.h3)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+        ...{ class: "landing-cta" },
+    });
+    /** @type {__VLS_StyleScopedClasses['landing-cta']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "cta-box" },
+    });
+    /** @type {__VLS_StyleScopedClasses['cta-box']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+        ...{ class: "section-eyebrow" },
+    });
+    /** @type {__VLS_StyleScopedClasses['section-eyebrow']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (__VLS_ctx.goToDashboard) },
+        ...{ class: "primary-button" },
+    });
+    /** @type {__VLS_StyleScopedClasses['primary-button']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.footer, __VLS_intrinsics.footer)({
+        ...{ class: "landing-footer" },
+    });
+    /** @type {__VLS_StyleScopedClasses['landing-footer']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "footer-brand" },
+    });
+    /** @type {__VLS_StyleScopedClasses['footer-brand']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "landing-logo" },
+    });
+    /** @type {__VLS_StyleScopedClasses['landing-logo']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+        ...{ class: "brand-mark" },
+    });
+    /** @type {__VLS_StyleScopedClasses['brand-mark']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "footer-links" },
+    });
+    /** @type {__VLS_StyleScopedClasses['footer-links']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.h4, __VLS_intrinsics.h4)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.a, __VLS_intrinsics.a)({
+        href: "#beneficios",
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.a, __VLS_intrinsics.a)({
+        href: "#como-funciona",
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.a, __VLS_intrinsics.a)({
+        href: "#modulos",
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.h4, __VLS_intrinsics.h4)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.a, __VLS_intrinsics.a)({
+        href: "#",
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.a, __VLS_intrinsics.a)({
+        href: "#",
+    });
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "footer-copy" },
+    });
+    /** @type {__VLS_StyleScopedClasses['footer-copy']} */ ;
 }
 if (__VLS_ctx.currentView === 'dashboard' && !__VLS_ctx.user) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
-        ...{ class: "workspace" },
+        ...{ class: "auth-page" },
     });
-    /** @type {__VLS_StyleScopedClasses['workspace']} */ ;
+    /** @type {__VLS_StyleScopedClasses['auth-page']} */ ;
     __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
-        ...{ class: "main-panel" },
+        ...{ class: "auth-card" },
     });
-    /** @type {__VLS_StyleScopedClasses['main-panel']} */ ;
+    /** @type {__VLS_StyleScopedClasses['auth-card']} */ ;
     __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
         ...{ class: "eyebrow" },
     });
@@ -854,7 +1337,7 @@ if (__VLS_ctx.currentView === 'dashboard' && !__VLS_ctx.user) {
     /** @type {__VLS_StyleScopedClasses['muted']} */ ;
     (__VLS_ctx.authMode === 'login'
         ? 'Acesse sua vitrine.'
-        : 'Crie sua empresa gratuitamente.');
+        : 'Crie sua empresa.');
     __VLS_asFunctionalElement1(__VLS_intrinsics.form, __VLS_intrinsics.form)({
         ...{ onSubmit: (__VLS_ctx.submitAuth) },
         ...{ class: "form-grid" },
@@ -912,7 +1395,7 @@ if (__VLS_ctx.currentView === 'dashboard' && !__VLS_ctx.user) {
                         ? 'register'
                         : 'login';
                 // @ts-ignore
-                [currentView, user, authMode, authMode, authMode, authMode, authMode, authMode, authMode, submitAuth, authForm, authForm, authForm, authForm, authForm, authForm, loading,];
+                [currentView, currentView, currentView, user, user, user, publicCompanyUrl, logout, error, error, notice, notice, goToDashboard, goToDashboard, goToDashboard, goToDashboard, goToDashboard, scrollToBenefits, authMode, authMode, authMode, authMode, authMode, authMode, authMode, submitAuth, authForm, authForm, authForm, authForm, authForm, authForm, loading,];
             } },
         ...{ class: "ghost-button" },
         type: "button",
@@ -922,12 +1405,100 @@ if (__VLS_ctx.currentView === 'dashboard' && !__VLS_ctx.user) {
         ? 'Criar conta'
         : 'Já tenho conta');
 }
-if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
+if (__VLS_ctx.currentView === 'dashboard' &&
+    __VLS_ctx.user &&
+    __VLS_ctx.isSubscriptionActive &&
+    __VLS_ctx.needsModuleChoice) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+        ...{ class: "choose-module-page" },
+    });
+    /** @type {__VLS_StyleScopedClasses['choose-module-page']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "choose-module-header" },
+    });
+    /** @type {__VLS_StyleScopedClasses['choose-module-header']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+        ...{ class: "eyebrow" },
+    });
+    /** @type {__VLS_StyleScopedClasses['eyebrow']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.h1, __VLS_intrinsics.h1)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+        ...{ class: "muted" },
+    });
+    /** @type {__VLS_StyleScopedClasses['muted']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "choose-module-grid" },
+    });
+    /** @type {__VLS_StyleScopedClasses['choose-module-grid']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
+        ...{ class: "choose-module-card" },
+    });
+    /** @type {__VLS_StyleScopedClasses['choose-module-card']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+        ...{ class: "eyebrow" },
+    });
+    /** @type {__VLS_StyleScopedClasses['eyebrow']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.ul, __VLS_intrinsics.ul)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.li, __VLS_intrinsics.li)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.li, __VLS_intrinsics.li)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.li, __VLS_intrinsics.li)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.li, __VLS_intrinsics.li)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (...[$event]) => {
+                if (!(__VLS_ctx.currentView === 'dashboard' &&
+                    __VLS_ctx.user &&
+                    __VLS_ctx.isSubscriptionActive &&
+                    __VLS_ctx.needsModuleChoice))
+                    return;
+                __VLS_ctx.selectModule('PAGES');
+                // @ts-ignore
+                [currentView, user, authMode, isSubscriptionActive, needsModuleChoice, selectModule,];
+            } },
+        ...{ class: "primary-button" },
+        type: "button",
+        disabled: (__VLS_ctx.loading),
+    });
+    /** @type {__VLS_StyleScopedClasses['primary-button']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
+        ...{ class: "choose-module-card" },
+    });
+    /** @type {__VLS_StyleScopedClasses['choose-module-card']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+        ...{ class: "eyebrow" },
+    });
+    /** @type {__VLS_StyleScopedClasses['eyebrow']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.ul, __VLS_intrinsics.ul)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.li, __VLS_intrinsics.li)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.li, __VLS_intrinsics.li)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.li, __VLS_intrinsics.li)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.li, __VLS_intrinsics.li)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (...[$event]) => {
+                if (!(__VLS_ctx.currentView === 'dashboard' &&
+                    __VLS_ctx.user &&
+                    __VLS_ctx.isSubscriptionActive &&
+                    __VLS_ctx.needsModuleChoice))
+                    return;
+                __VLS_ctx.selectModule('AGENDS');
+                // @ts-ignore
+                [loading, selectModule,];
+            } },
+        ...{ class: "primary-button" },
+        type: "button",
+        disabled: (__VLS_ctx.loading),
+    });
+    /** @type {__VLS_StyleScopedClasses['primary-button']} */ ;
+}
+if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
         ...{ class: "workspace" },
+        ...{ class: ({ 'workspace-single': __VLS_ctx.sidebarMode === 'none' }) },
     });
     /** @type {__VLS_StyleScopedClasses['workspace']} */ ;
-    if (__VLS_ctx.user) {
+    /** @type {__VLS_StyleScopedClasses['workspace-single']} */ ;
+    if (__VLS_ctx.sidebarMode !== 'none') {
         __VLS_asFunctionalElement1(__VLS_intrinsics.aside, __VLS_intrinsics.aside)({
             ...{ class: "dashboard-sidebar" },
         });
@@ -942,122 +1513,220 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
         /** @type {__VLS_StyleScopedClasses['brand-mark']} */ ;
         __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
         __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
-        __VLS_asFunctionalElement1(__VLS_intrinsics.nav, __VLS_intrinsics.nav)({
-            ...{ class: "sidebar-nav" },
-        });
-        /** @type {__VLS_StyleScopedClasses['sidebar-nav']} */ ;
-        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-            ...{ onClick: (...[$event]) => {
-                    if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
-                        return;
-                    if (!(__VLS_ctx.user))
-                        return;
-                    __VLS_ctx.dashboardTab = 'products';
-                    // @ts-ignore
-                    [currentView, user, user, authMode, dashboardTab,];
-                } },
-            type: "button",
-            ...{ class: "sidebar-item" },
-            ...{ class: ({
-                    active: __VLS_ctx.dashboardTab === 'products'
-                }) },
-        });
-        /** @type {__VLS_StyleScopedClasses['sidebar-item']} */ ;
-        /** @type {__VLS_StyleScopedClasses['active']} */ ;
-        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-            ...{ onClick: (...[$event]) => {
-                    if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
-                        return;
-                    if (!(__VLS_ctx.user))
-                        return;
-                    __VLS_ctx.dashboardTab = 'company';
-                    // @ts-ignore
-                    [dashboardTab, dashboardTab,];
-                } },
-            type: "button",
-            ...{ class: "sidebar-item" },
-            ...{ class: ({
-                    active: __VLS_ctx.dashboardTab === 'company'
-                }) },
-        });
-        /** @type {__VLS_StyleScopedClasses['sidebar-item']} */ ;
-        /** @type {__VLS_StyleScopedClasses['active']} */ ;
-        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-            ...{ onClick: (...[$event]) => {
-                    if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
-                        return;
-                    if (!(__VLS_ctx.user))
-                        return;
-                    __VLS_ctx.dashboardTab = 'analytics';
-                    __VLS_ctx.loadAnalytics();
-                    ;
-                    // @ts-ignore
-                    [dashboardTab, dashboardTab, loadAnalytics,];
-                } },
-            type: "button",
-            ...{ class: "sidebar-item" },
-            ...{ class: ({
-                    active: __VLS_ctx.dashboardTab === 'analytics'
-                }) },
-        });
-        /** @type {__VLS_StyleScopedClasses['sidebar-item']} */ ;
-        /** @type {__VLS_StyleScopedClasses['active']} */ ;
-        __VLS_asFunctionalElement1(__VLS_intrinsics.nav, __VLS_intrinsics.nav)({
-            ...{ class: "sidebar-nav smart-agends-nav" },
-        });
-        /** @type {__VLS_StyleScopedClasses['sidebar-nav']} */ ;
-        /** @type {__VLS_StyleScopedClasses['smart-agends-nav']} */ ;
-        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-            ...{ onClick: (...[$event]) => {
-                    if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
-                        return;
-                    if (!(__VLS_ctx.user))
-                        return;
-                    __VLS_ctx.dashboardTab = 'services';
-                    __VLS_ctx.loadServices();
-                    // @ts-ignore
-                    [dashboardTab, dashboardTab, loadServices,];
-                } },
-            type: "button",
-            ...{ class: "sidebar-item" },
-            ...{ class: ({ active: __VLS_ctx.dashboardTab === 'services' }) },
-        });
-        /** @type {__VLS_StyleScopedClasses['sidebar-item']} */ ;
-        /** @type {__VLS_StyleScopedClasses['active']} */ ;
-        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-            ...{ onClick: (...[$event]) => {
-                    if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
-                        return;
-                    if (!(__VLS_ctx.user))
-                        return;
-                    __VLS_ctx.dashboardTab = 'availability';
-                    __VLS_ctx.loadAvailability();
-                    // @ts-ignore
-                    [dashboardTab, dashboardTab, loadAvailability,];
-                } },
-            type: "button",
-            ...{ class: "sidebar-item" },
-            ...{ class: ({ active: __VLS_ctx.dashboardTab === 'availability' }) },
-        });
-        /** @type {__VLS_StyleScopedClasses['sidebar-item']} */ ;
-        /** @type {__VLS_StyleScopedClasses['active']} */ ;
-        __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-            ...{ onClick: (...[$event]) => {
-                    if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
-                        return;
-                    if (!(__VLS_ctx.user))
-                        return;
-                    __VLS_ctx.dashboardTab = 'agenda';
-                    __VLS_ctx.loadAppointments();
-                    // @ts-ignore
-                    [dashboardTab, dashboardTab, loadAppointments,];
-                } },
-            type: "button",
-            ...{ class: "sidebar-item" },
-            ...{ class: ({ active: __VLS_ctx.dashboardTab === 'agenda' }) },
-        });
-        /** @type {__VLS_StyleScopedClasses['sidebar-item']} */ ;
-        /** @type {__VLS_StyleScopedClasses['active']} */ ;
+        if (__VLS_ctx.sidebarMode === 'pages') {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.nav, __VLS_intrinsics.nav)({
+                ...{ class: "sidebar-nav" },
+            });
+            /** @type {__VLS_StyleScopedClasses['sidebar-nav']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                ...{ onClick: (...[$event]) => {
+                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                            return;
+                        if (!(__VLS_ctx.sidebarMode !== 'none'))
+                            return;
+                        if (!(__VLS_ctx.sidebarMode === 'pages'))
+                            return;
+                        __VLS_ctx.openDashboard();
+                        // @ts-ignore
+                        [currentView, loading, canShowDashboardWorkspace, sidebarMode, sidebarMode, sidebarMode, openDashboard,];
+                    } },
+                type: "button",
+                ...{ class: "sidebar-item" },
+                ...{ class: ({ active: __VLS_ctx.dashboardTab === 'dashboard' }) },
+            });
+            /** @type {__VLS_StyleScopedClasses['sidebar-item']} */ ;
+            /** @type {__VLS_StyleScopedClasses['active']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                ...{ onClick: (...[$event]) => {
+                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                            return;
+                        if (!(__VLS_ctx.sidebarMode !== 'none'))
+                            return;
+                        if (!(__VLS_ctx.sidebarMode === 'pages'))
+                            return;
+                        __VLS_ctx.dashboardTab = 'products';
+                        // @ts-ignore
+                        [dashboardTab, dashboardTab,];
+                    } },
+                type: "button",
+                ...{ class: "sidebar-item" },
+                ...{ class: ({ active: __VLS_ctx.dashboardTab === 'products' }) },
+            });
+            /** @type {__VLS_StyleScopedClasses['sidebar-item']} */ ;
+            /** @type {__VLS_StyleScopedClasses['active']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                ...{ onClick: (...[$event]) => {
+                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                            return;
+                        if (!(__VLS_ctx.sidebarMode !== 'none'))
+                            return;
+                        if (!(__VLS_ctx.sidebarMode === 'pages'))
+                            return;
+                        __VLS_ctx.dashboardTab = 'analytics';
+                        __VLS_ctx.loadAnalytics();
+                        // @ts-ignore
+                        [dashboardTab, dashboardTab, loadAnalytics,];
+                    } },
+                type: "button",
+                ...{ class: "sidebar-item" },
+                ...{ class: ({ active: __VLS_ctx.dashboardTab === 'analytics' }) },
+            });
+            /** @type {__VLS_StyleScopedClasses['sidebar-item']} */ ;
+            /** @type {__VLS_StyleScopedClasses['active']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                ...{ onClick: (...[$event]) => {
+                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                            return;
+                        if (!(__VLS_ctx.sidebarMode !== 'none'))
+                            return;
+                        if (!(__VLS_ctx.sidebarMode === 'pages'))
+                            return;
+                        __VLS_ctx.dashboardTab = 'company';
+                        // @ts-ignore
+                        [dashboardTab, dashboardTab,];
+                    } },
+                type: "button",
+                ...{ class: "sidebar-item" },
+                ...{ class: ({ active: __VLS_ctx.dashboardTab === 'company' }) },
+            });
+            /** @type {__VLS_StyleScopedClasses['sidebar-item']} */ ;
+            /** @type {__VLS_StyleScopedClasses['active']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                ...{ onClick: (...[$event]) => {
+                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                            return;
+                        if (!(__VLS_ctx.sidebarMode !== 'none'))
+                            return;
+                        if (!(__VLS_ctx.sidebarMode === 'pages'))
+                            return;
+                        __VLS_ctx.dashboardTab = 'settings';
+                        // @ts-ignore
+                        [dashboardTab, dashboardTab,];
+                    } },
+                type: "button",
+                ...{ class: "sidebar-item" },
+                ...{ class: ({ active: __VLS_ctx.dashboardTab === 'settings' }) },
+            });
+            /** @type {__VLS_StyleScopedClasses['sidebar-item']} */ ;
+            /** @type {__VLS_StyleScopedClasses['active']} */ ;
+        }
+        if (__VLS_ctx.sidebarMode === 'agends') {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.nav, __VLS_intrinsics.nav)({
+                ...{ class: "sidebar-nav" },
+            });
+            /** @type {__VLS_StyleScopedClasses['sidebar-nav']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                ...{ onClick: (...[$event]) => {
+                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                            return;
+                        if (!(__VLS_ctx.sidebarMode !== 'none'))
+                            return;
+                        if (!(__VLS_ctx.sidebarMode === 'agends'))
+                            return;
+                        __VLS_ctx.openDashboard();
+                        // @ts-ignore
+                        [sidebarMode, openDashboard, dashboardTab,];
+                    } },
+                type: "button",
+                ...{ class: "sidebar-item" },
+                ...{ class: ({ active: __VLS_ctx.dashboardTab === 'dashboard' }) },
+            });
+            /** @type {__VLS_StyleScopedClasses['sidebar-item']} */ ;
+            /** @type {__VLS_StyleScopedClasses['active']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                ...{ onClick: (...[$event]) => {
+                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                            return;
+                        if (!(__VLS_ctx.sidebarMode !== 'none'))
+                            return;
+                        if (!(__VLS_ctx.sidebarMode === 'agends'))
+                            return;
+                        __VLS_ctx.dashboardTab = 'services';
+                        __VLS_ctx.loadServices();
+                        // @ts-ignore
+                        [dashboardTab, dashboardTab, loadServices,];
+                    } },
+                type: "button",
+                ...{ class: "sidebar-item" },
+                ...{ class: ({ active: __VLS_ctx.dashboardTab === 'services' }) },
+            });
+            /** @type {__VLS_StyleScopedClasses['sidebar-item']} */ ;
+            /** @type {__VLS_StyleScopedClasses['active']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                ...{ onClick: (...[$event]) => {
+                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                            return;
+                        if (!(__VLS_ctx.sidebarMode !== 'none'))
+                            return;
+                        if (!(__VLS_ctx.sidebarMode === 'agends'))
+                            return;
+                        __VLS_ctx.dashboardTab = 'availability';
+                        __VLS_ctx.loadAvailability();
+                        // @ts-ignore
+                        [dashboardTab, dashboardTab, loadAvailability,];
+                    } },
+                type: "button",
+                ...{ class: "sidebar-item" },
+                ...{ class: ({ active: __VLS_ctx.dashboardTab === 'availability' }) },
+            });
+            /** @type {__VLS_StyleScopedClasses['sidebar-item']} */ ;
+            /** @type {__VLS_StyleScopedClasses['active']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                ...{ onClick: (...[$event]) => {
+                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                            return;
+                        if (!(__VLS_ctx.sidebarMode !== 'none'))
+                            return;
+                        if (!(__VLS_ctx.sidebarMode === 'agends'))
+                            return;
+                        __VLS_ctx.dashboardTab = 'agenda';
+                        __VLS_ctx.loadAppointments();
+                        // @ts-ignore
+                        [dashboardTab, dashboardTab, loadAppointments,];
+                    } },
+                type: "button",
+                ...{ class: "sidebar-item" },
+                ...{ class: ({ active: __VLS_ctx.dashboardTab === 'agenda' }) },
+            });
+            /** @type {__VLS_StyleScopedClasses['sidebar-item']} */ ;
+            /** @type {__VLS_StyleScopedClasses['active']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                ...{ onClick: (...[$event]) => {
+                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                            return;
+                        if (!(__VLS_ctx.sidebarMode !== 'none'))
+                            return;
+                        if (!(__VLS_ctx.sidebarMode === 'agends'))
+                            return;
+                        __VLS_ctx.dashboardTab = 'company';
+                        // @ts-ignore
+                        [dashboardTab, dashboardTab,];
+                    } },
+                type: "button",
+                ...{ class: "sidebar-item" },
+                ...{ class: ({ active: __VLS_ctx.dashboardTab === 'company' }) },
+            });
+            /** @type {__VLS_StyleScopedClasses['sidebar-item']} */ ;
+            /** @type {__VLS_StyleScopedClasses['active']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                ...{ onClick: (...[$event]) => {
+                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                            return;
+                        if (!(__VLS_ctx.sidebarMode !== 'none'))
+                            return;
+                        if (!(__VLS_ctx.sidebarMode === 'agends'))
+                            return;
+                        __VLS_ctx.dashboardTab = 'settings';
+                        // @ts-ignore
+                        [dashboardTab, dashboardTab,];
+                    } },
+                type: "button",
+                ...{ class: "sidebar-item" },
+                ...{ class: ({ active: __VLS_ctx.dashboardTab === 'settings' }) },
+            });
+            /** @type {__VLS_StyleScopedClasses['sidebar-item']} */ ;
+            /** @type {__VLS_StyleScopedClasses['active']} */ ;
+        }
         __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
             ...{ class: "sidebar-footer" },
         });
@@ -1073,7 +1742,8 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
         });
         /** @type {__VLS_StyleScopedClasses['primary-link']} */ ;
     }
-    if (__VLS_ctx.user) {
+    if (__VLS_ctx.user &&
+        !__VLS_ctx.needsModuleChoice) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
             ...{ class: "main-panel" },
         });
@@ -1091,48 +1761,77 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
             ...{ class: "dashboard-title" },
         });
         /** @type {__VLS_StyleScopedClasses['dashboard-title']} */ ;
-        (__VLS_ctx.dashboardTab === 'products'
-            ? 'Produtos'
-            : __VLS_ctx.dashboardTab === 'analytics'
-                ? 'Analytics'
-                : __VLS_ctx.dashboardTab === 'services'
-                    ? 'Serviços'
-                    : __VLS_ctx.dashboardTab === 'availability'
-                        ? 'Disponibilidade'
-                        : __VLS_ctx.dashboardTab === 'agenda'
-                            ? 'Agenda'
-                            : 'Minha Empresa');
+        (__VLS_ctx.currentDashboardSection.title);
         __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
             ...{ class: "dashboard-subtitle" },
         });
         /** @type {__VLS_StyleScopedClasses['dashboard-subtitle']} */ ;
-        (__VLS_ctx.dashboardTab === 'products'
-            ? 'Gerencie seu catálogo e publique novos produtos.'
-            : __VLS_ctx.dashboardTab === 'analytics'
-                ? 'Acompanhe o desempenho dos seus produtos.'
-                : __VLS_ctx.dashboardTab === 'services'
-                    ? 'Gerencie os servicos oferecidos pela empresa.'
-                    : __VLS_ctx.dashboardTab === 'availability'
-                        ? 'Defina os dias e horários de atendimento.'
-                        : __VLS_ctx.dashboardTab === 'agenda'
-                            ? 'Acompanhe e gerencie seus agendamentos.'
-                            : 'Gerencie as informações da sua empresa.');
+        (__VLS_ctx.currentDashboardSection.subtitle);
         __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
             ...{ class: "dashboard-counter" },
         });
         /** @type {__VLS_StyleScopedClasses['dashboard-counter']} */ ;
-        (__VLS_ctx.dashboardTab === 'products'
-            ? `${__VLS_ctx.products.length} produtos`
-            : __VLS_ctx.dashboardTab === 'analytics'
-                ? `${__VLS_ctx.monitoredProducts} produtos`
-                : __VLS_ctx.dashboardTab === 'services'
-                    ? `${__VLS_ctx.services.length} serviço`
-                    : __VLS_ctx.dashboardTab === 'availability'
-                        ? `${__VLS_ctx.availability.length} horarios`
-                        : __VLS_ctx.dashboardTab === 'agenda'
-                            ? `${__VLS_ctx.appointments.length} agendamentos`
-                            : 'Perfil');
-        if (__VLS_ctx.user && __VLS_ctx.dashboardTab === 'products') {
+        (__VLS_ctx.currentDashboardCounter);
+        if (__VLS_ctx.dashboardTab === 'dashboard' && __VLS_ctx.showPagesContent) {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "analytics-cards" },
+            });
+            /** @type {__VLS_StyleScopedClasses['analytics-cards']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "analytics-card" },
+            });
+            /** @type {__VLS_StyleScopedClasses['analytics-card']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+            (__VLS_ctx.products.length);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "analytics-card" },
+            });
+            /** @type {__VLS_StyleScopedClasses['analytics-card']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+            (__VLS_ctx.totalClicks);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "analytics-card" },
+            });
+            /** @type {__VLS_StyleScopedClasses['analytics-card']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+            (__VLS_ctx.totalReservations);
+        }
+        if (__VLS_ctx.dashboardTab === 'dashboard' && __VLS_ctx.selectedModule === 'AGENDS') {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "analytics-page" },
+            });
+            /** @type {__VLS_StyleScopedClasses['analytics-page']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "analytics-cards" },
+            });
+            /** @type {__VLS_StyleScopedClasses['analytics-cards']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "analytics-card" },
+            });
+            /** @type {__VLS_StyleScopedClasses['analytics-card']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+            (__VLS_ctx.services.length);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "analytics-card" },
+            });
+            /** @type {__VLS_StyleScopedClasses['analytics-card']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+            (__VLS_ctx.todayAppointments.length);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "analytics-card" },
+            });
+            /** @type {__VLS_StyleScopedClasses['analytics-card']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+            (__VLS_ctx.availability.length);
+        }
+        if (__VLS_ctx.user && __VLS_ctx.dashboardTab === 'products' && __VLS_ctx.showPagesContent) {
             __VLS_asFunctionalElement1(__VLS_intrinsics.form, __VLS_intrinsics.form)({
                 ...{ onSubmit: (__VLS_ctx.createProduct) },
                 ...{ class: "product-form" },
@@ -1185,17 +1884,18 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                     });
                     __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                         ...{ onClick: (...[$event]) => {
-                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
                                     return;
-                                if (!(__VLS_ctx.user))
+                                if (!(__VLS_ctx.user &&
+                                    !__VLS_ctx.needsModuleChoice))
                                     return;
-                                if (!(__VLS_ctx.user && __VLS_ctx.dashboardTab === 'products'))
+                                if (!(__VLS_ctx.user && __VLS_ctx.dashboardTab === 'products' && __VLS_ctx.showPagesContent))
                                     return;
                                 if (!(__VLS_ctx.productForm.images.length))
                                     return;
                                 __VLS_ctx.removeProductImage(index);
                                 // @ts-ignore
-                                [user, user, publicCompanyUrl, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, dashboardTab, products, monitoredProducts, services, availability, appointments, createProduct, productForm, productForm, productForm, productForm, productForm, productForm, uploadProductImages, uploadingProductImages, removeProductImage,];
+                                [user, user, publicCompanyUrl, needsModuleChoice, dashboardTab, dashboardTab, dashboardTab, dashboardTab, currentDashboardSection, currentDashboardSection, currentDashboardCounter, showPagesContent, showPagesContent, products, totalClicks, totalReservations, selectedModule, services, todayAppointments, availability, createProduct, productForm, productForm, productForm, productForm, productForm, productForm, uploadProductImages, uploadingProductImages, removeProductImage,];
                             } },
                         type: "button",
                         ...{ class: "product-image-remove" },
@@ -1231,7 +1931,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
             });
             /** @type {__VLS_StyleScopedClasses['primary-button']} */ ;
         }
-        if (__VLS_ctx.dashboardTab === 'products') {
+        if (__VLS_ctx.dashboardTab === 'products' && __VLS_ctx.showPagesContent) {
             __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
                 ...{ class: "product-list" },
             });
@@ -1265,15 +1965,16 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                 /** @type {__VLS_StyleScopedClasses['product-action-link']} */ ;
                 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                     ...{ onClick: (...[$event]) => {
-                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
                                 return;
-                            if (!(__VLS_ctx.user))
+                            if (!(__VLS_ctx.user &&
+                                !__VLS_ctx.needsModuleChoice))
                                 return;
-                            if (!(__VLS_ctx.dashboardTab === 'products'))
+                            if (!(__VLS_ctx.dashboardTab === 'products' && __VLS_ctx.showPagesContent))
                                 return;
                             __VLS_ctx.copyProductLink(product.slug);
                             // @ts-ignore
-                            [loading, dashboardTab, products, productForm, productForm, productForm, productForm, formatCurrency, copyProductLink,];
+                            [loading, dashboardTab, showPagesContent, products, productForm, productForm, productForm, productForm, formatCurrency, copyProductLink,];
                         } },
                     type: "button",
                     ...{ class: "ghost-button" },
@@ -1281,11 +1982,12 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                 /** @type {__VLS_StyleScopedClasses['ghost-button']} */ ;
                 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                     ...{ onClick: (...[$event]) => {
-                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
                                 return;
-                            if (!(__VLS_ctx.user))
+                            if (!(__VLS_ctx.user &&
+                                !__VLS_ctx.needsModuleChoice))
                                 return;
-                            if (!(__VLS_ctx.dashboardTab === 'products'))
+                            if (!(__VLS_ctx.dashboardTab === 'products' && __VLS_ctx.showPagesContent))
                                 return;
                             __VLS_ctx.openRelatedProducts(product);
                             // @ts-ignore
@@ -1309,11 +2011,12 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                         if (candidate.id !== product.id) {
                             __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
                                 ...{ onClick: (...[$event]) => {
-                                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
                                             return;
-                                        if (!(__VLS_ctx.user))
+                                        if (!(__VLS_ctx.user &&
+                                            !__VLS_ctx.needsModuleChoice))
                                             return;
-                                        if (!(__VLS_ctx.dashboardTab === 'products'))
+                                        if (!(__VLS_ctx.dashboardTab === 'products' && __VLS_ctx.showPagesContent))
                                             return;
                                         if (!(__VLS_ctx.selectedProductId === product.id))
                                             return;
@@ -1370,7 +2073,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                 [relatedSelection, saveRelatedProducts,];
             }
         }
-        if (__VLS_ctx.dashboardTab === 'analytics') {
+        if (__VLS_ctx.dashboardTab === 'analytics' && __VLS_ctx.showPagesContent) {
             __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
                 ...{ class: "analytics-page" },
             });
@@ -1425,7 +2128,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                 __VLS_asFunctionalElement1(__VLS_intrinsics.td, __VLS_intrinsics.td)({});
                 (item.reservations);
                 // @ts-ignore
-                [dashboardTab, monitoredProducts, totalClicks, totalReservations, analytics,];
+                [dashboardTab, showPagesContent, totalClicks, totalReservations, monitoredProducts, analytics,];
             }
             if (!__VLS_ctx.analytics.length) {
                 __VLS_asFunctionalElement1(__VLS_intrinsics.tr, __VLS_intrinsics.tr)({});
@@ -1434,7 +2137,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                 });
             }
         }
-        if (__VLS_ctx.dashboardTab === 'services') {
+        if (__VLS_ctx.dashboardTab === 'services' && __VLS_ctx.showAgendsContent) {
             __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
                 ...{ class: "services-dashboard" },
             });
@@ -1500,17 +2203,18 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                 });
                 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                     ...{ onClick: (...[$event]) => {
-                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
                                 return;
-                            if (!(__VLS_ctx.user))
+                            if (!(__VLS_ctx.user &&
+                                !__VLS_ctx.needsModuleChoice))
                                 return;
-                            if (!(__VLS_ctx.dashboardTab === 'services'))
+                            if (!(__VLS_ctx.dashboardTab === 'services' && __VLS_ctx.showAgendsContent))
                                 return;
                             if (!(__VLS_ctx.serviceForm.image))
                                 return;
                             __VLS_ctx.serviceForm.image = '';
                             // @ts-ignore
-                            [dashboardTab, uploadingProductImages, analytics, saveService, serviceForm, serviceForm, serviceForm, serviceForm, serviceForm, serviceForm, serviceForm, uploadServiceImage,];
+                            [dashboardTab, uploadingProductImages, analytics, showAgendsContent, saveService, serviceForm, serviceForm, serviceForm, serviceForm, serviceForm, serviceForm, serviceForm, uploadServiceImage,];
                         } },
                     type: "button",
                     ...{ class: "product-image-remove" },
@@ -1575,11 +2279,12 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                 /** @type {__VLS_StyleScopedClasses['product-actions']} */ ;
                 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                     ...{ onClick: (...[$event]) => {
-                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
                                 return;
-                            if (!(__VLS_ctx.user))
+                            if (!(__VLS_ctx.user &&
+                                !__VLS_ctx.needsModuleChoice))
                                 return;
-                            if (!(__VLS_ctx.dashboardTab === 'services'))
+                            if (!(__VLS_ctx.dashboardTab === 'services' && __VLS_ctx.showAgendsContent))
                                 return;
                             __VLS_ctx.editService(service);
                             // @ts-ignore
@@ -1591,11 +2296,12 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                 /** @type {__VLS_StyleScopedClasses['ghost-button']} */ ;
                 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                     ...{ onClick: (...[$event]) => {
-                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
                                 return;
-                            if (!(__VLS_ctx.user))
+                            if (!(__VLS_ctx.user &&
+                                !__VLS_ctx.needsModuleChoice))
                                 return;
-                            if (!(__VLS_ctx.dashboardTab === 'services'))
+                            if (!(__VLS_ctx.dashboardTab === 'services' && __VLS_ctx.showAgendsContent))
                                 return;
                             __VLS_ctx.removeService(service.id);
                             // @ts-ignore
@@ -1615,7 +2321,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                 /** @type {__VLS_StyleScopedClasses['muted']} */ ;
             }
         }
-        if (__VLS_ctx.dashboardTab === 'availability') {
+        if (__VLS_ctx.dashboardTab === 'availability' && __VLS_ctx.showAgendsContent) {
             __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
                 ...{ class: "availability-dashboard" },
             });
@@ -1635,7 +2341,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                 });
                 (weekday.label);
                 // @ts-ignore
-                [dashboardTab, services, saveAvailability, availabilityForm, weekdayOptions,];
+                [dashboardTab, services, showAgendsContent, saveAvailability, availabilityForm, weekdayOptions,];
             }
             __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({});
             __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
@@ -1702,11 +2408,12 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                 /** @type {__VLS_StyleScopedClasses['product-actions']} */ ;
                 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                     ...{ onClick: (...[$event]) => {
-                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
                                 return;
-                            if (!(__VLS_ctx.user))
+                            if (!(__VLS_ctx.user &&
+                                !__VLS_ctx.needsModuleChoice))
                                 return;
-                            if (!(__VLS_ctx.dashboardTab === 'availability'))
+                            if (!(__VLS_ctx.dashboardTab === 'availability' && __VLS_ctx.showAgendsContent))
                                 return;
                             __VLS_ctx.editAvailability(item);
                             // @ts-ignore
@@ -1718,11 +2425,12 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                 /** @type {__VLS_StyleScopedClasses['ghost-button']} */ ;
                 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                     ...{ onClick: (...[$event]) => {
-                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
                                 return;
-                            if (!(__VLS_ctx.user))
+                            if (!(__VLS_ctx.user &&
+                                !__VLS_ctx.needsModuleChoice))
                                 return;
-                            if (!(__VLS_ctx.dashboardTab === 'availability'))
+                            if (!(__VLS_ctx.dashboardTab === 'availability' && __VLS_ctx.showAgendsContent))
                                 return;
                             __VLS_ctx.removeAvailability(item.id);
                             // @ts-ignore
@@ -1742,7 +2450,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                 /** @type {__VLS_StyleScopedClasses['muted']} */ ;
             }
         }
-        if (__VLS_ctx.dashboardTab === 'agenda') {
+        if (__VLS_ctx.dashboardTab === 'agenda' && __VLS_ctx.showAgendsContent) {
             __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
                 ...{ class: "agenda-dashboard" },
             });
@@ -1778,17 +2486,18 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                 if (!['CONFIRMED', 'COMPLETED', 'CANCELED'].includes(appointment.status)) {
                     __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                         ...{ onClick: (...[$event]) => {
-                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
                                     return;
-                                if (!(__VLS_ctx.user))
+                                if (!(__VLS_ctx.user &&
+                                    !__VLS_ctx.needsModuleChoice))
                                     return;
-                                if (!(__VLS_ctx.dashboardTab === 'agenda'))
+                                if (!(__VLS_ctx.dashboardTab === 'agenda' && __VLS_ctx.showAgendsContent))
                                     return;
                                 if (!(!['CONFIRMED', 'COMPLETED', 'CANCELED'].includes(appointment.status)))
                                     return;
                                 __VLS_ctx.changeAppointmentStatus(appointment.id, 'CONFIRMED');
                                 // @ts-ignore
-                                [dashboardTab, availability, todayAppointments, formatAppointmentDate, changeAppointmentStatus,];
+                                [dashboardTab, todayAppointments, availability, showAgendsContent, formatAppointmentDate, changeAppointmentStatus,];
                             } },
                         type: "button",
                     });
@@ -1796,11 +2505,12 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                 if (!['COMPLETED', 'CANCELED'].includes(appointment.status)) {
                     __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                         ...{ onClick: (...[$event]) => {
-                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
                                     return;
-                                if (!(__VLS_ctx.user))
+                                if (!(__VLS_ctx.user &&
+                                    !__VLS_ctx.needsModuleChoice))
                                     return;
-                                if (!(__VLS_ctx.dashboardTab === 'agenda'))
+                                if (!(__VLS_ctx.dashboardTab === 'agenda' && __VLS_ctx.showAgendsContent))
                                     return;
                                 if (!(!['COMPLETED', 'CANCELED'].includes(appointment.status)))
                                     return;
@@ -1814,11 +2524,12 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                 if (!['COMPLETED', 'CANCELED'].includes(appointment.status)) {
                     __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                         ...{ onClick: (...[$event]) => {
-                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
                                     return;
-                                if (!(__VLS_ctx.user))
+                                if (!(__VLS_ctx.user &&
+                                    !__VLS_ctx.needsModuleChoice))
                                     return;
-                                if (!(__VLS_ctx.dashboardTab === 'agenda'))
+                                if (!(__VLS_ctx.dashboardTab === 'agenda' && __VLS_ctx.showAgendsContent))
                                     return;
                                 if (!(!['COMPLETED', 'CANCELED'].includes(appointment.status)))
                                     return;
@@ -1869,11 +2580,12 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                 if (!['CONFIRMED', 'COMPLETED', 'CANCELED'].includes(appointment.status)) {
                     __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                         ...{ onClick: (...[$event]) => {
-                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
                                     return;
-                                if (!(__VLS_ctx.user))
+                                if (!(__VLS_ctx.user &&
+                                    !__VLS_ctx.needsModuleChoice))
                                     return;
-                                if (!(__VLS_ctx.dashboardTab === 'agenda'))
+                                if (!(__VLS_ctx.dashboardTab === 'agenda' && __VLS_ctx.showAgendsContent))
                                     return;
                                 if (!(!['CONFIRMED', 'COMPLETED', 'CANCELED'].includes(appointment.status)))
                                     return;
@@ -1887,11 +2599,12 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                 if (!['COMPLETED', 'CANCELED'].includes(appointment.status)) {
                     __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                         ...{ onClick: (...[$event]) => {
-                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
                                     return;
-                                if (!(__VLS_ctx.user))
+                                if (!(__VLS_ctx.user &&
+                                    !__VLS_ctx.needsModuleChoice))
                                     return;
-                                if (!(__VLS_ctx.dashboardTab === 'agenda'))
+                                if (!(__VLS_ctx.dashboardTab === 'agenda' && __VLS_ctx.showAgendsContent))
                                     return;
                                 if (!(!['COMPLETED', 'CANCELED'].includes(appointment.status)))
                                     return;
@@ -1905,11 +2618,12 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
                 if (!['COMPLETED', 'CANCELED'].includes(appointment.status)) {
                     __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                         ...{ onClick: (...[$event]) => {
-                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user))
+                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
                                     return;
-                                if (!(__VLS_ctx.user))
+                                if (!(__VLS_ctx.user &&
+                                    !__VLS_ctx.needsModuleChoice))
                                     return;
-                                if (!(__VLS_ctx.dashboardTab === 'agenda'))
+                                if (!(__VLS_ctx.dashboardTab === 'agenda' && __VLS_ctx.showAgendsContent))
                                     return;
                                 if (!(!['COMPLETED', 'CANCELED'].includes(appointment.status)))
                                     return;
@@ -2063,6 +2777,295 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.user) {
             });
             /** @type {__VLS_StyleScopedClasses['primary-button']} */ ;
         }
+        if (__VLS_ctx.dashboardTab === 'subscription') {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "subscription-page" },
+            });
+            /** @type {__VLS_StyleScopedClasses['subscription-page']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "subscription-card" },
+            });
+            /** @type {__VLS_StyleScopedClasses['subscription-card']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "subscription-header" },
+            });
+            /** @type {__VLS_StyleScopedClasses['subscription-header']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+                ...{ class: "eyebrow" },
+            });
+            /** @type {__VLS_StyleScopedClasses['eyebrow']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
+            (__VLS_ctx.subscription?.plan.name ?? 'Smart Links');
+            __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({
+                ...{ class: "subscription-status" },
+                ...{ class: ((__VLS_ctx.subscription?.status ?? 'PENDING').toLowerCase()) },
+            });
+            /** @type {__VLS_StyleScopedClasses['subscription-status']} */ ;
+            (__VLS_ctx.subscription?.status ?? 'PENDING');
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "subscription-grid" },
+            });
+            /** @type {__VLS_StyleScopedClasses['subscription-grid']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "subscription-item" },
+            });
+            /** @type {__VLS_StyleScopedClasses['subscription-item']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+            (__VLS_ctx.subscription?.plan.name ?? 'Smart Links');
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "subscription-item" },
+            });
+            /** @type {__VLS_StyleScopedClasses['subscription-item']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+            (__VLS_ctx.formatCurrency(__VLS_ctx.subscription?.plan.price ?? 97));
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "subscription-item" },
+            });
+            /** @type {__VLS_StyleScopedClasses['subscription-item']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+            (__VLS_ctx.subscription?.nextDueDate?.slice(0, 10) ?? 'A definir');
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "subscription-item" },
+            });
+            /** @type {__VLS_StyleScopedClasses['subscription-item']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+            (__VLS_ctx.subscription?.paymentMethod ?? 'Não definida');
+            if (!__VLS_ctx.subscriptionPayment) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.form, __VLS_intrinsics.form)({
+                    ...{ onSubmit: (__VLS_ctx.generateSubscriptionPayment) },
+                    ...{ class: "subscription-payment-form" },
+                });
+                /** @type {__VLS_StyleScopedClasses['subscription-payment-form']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+                __VLS_asFunctionalElement1(__VLS_intrinsics.h3, __VLS_intrinsics.h3)({});
+                (__VLS_ctx.subscription?.asaasSubscriptionId ? 'Consultar cobrança' : 'Gerar primeira cobrança');
+                __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+                    ...{ class: "muted" },
+                });
+                /** @type {__VLS_StyleScopedClasses['muted']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+                    required: true,
+                    inputmode: "numeric",
+                    placeholder: "CPF ou CNPJ",
+                });
+                (__VLS_ctx.subscriptionForm.cpfCnpj);
+                __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                    ...{ class: "payment-method-control" },
+                });
+                /** @type {__VLS_StyleScopedClasses['payment-method-control']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                    ...{ class: ({ active: __VLS_ctx.subscriptionForm.billingType === 'PIX' }) },
+                });
+                /** @type {__VLS_StyleScopedClasses['active']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+                    type: "radio",
+                    value: "PIX",
+                });
+                (__VLS_ctx.subscriptionForm.billingType);
+                __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                    ...{ class: ({ active: __VLS_ctx.subscriptionForm.billingType === 'BOLETO' }) },
+                });
+                /** @type {__VLS_StyleScopedClasses['active']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
+                    type: "radio",
+                    value: "BOLETO",
+                });
+                (__VLS_ctx.subscriptionForm.billingType);
+                __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                    ...{ class: "primary-button" },
+                    type: "submit",
+                    disabled: (__VLS_ctx.loading),
+                });
+                /** @type {__VLS_StyleScopedClasses['primary-button']} */ ;
+                (__VLS_ctx.loading ? 'Gerando...' : 'Gerar cobrança');
+            }
+            if (__VLS_ctx.subscriptionPayment) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                    ...{ class: "payment-result" },
+                });
+                /** @type {__VLS_StyleScopedClasses['payment-result']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+                __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+                    ...{ class: "eyebrow" },
+                });
+                /** @type {__VLS_StyleScopedClasses['eyebrow']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.h3, __VLS_intrinsics.h3)({});
+                (__VLS_ctx.formatCurrency(__VLS_ctx.subscriptionPayment.payment.value));
+                __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+                    ...{ class: "muted" },
+                });
+                /** @type {__VLS_StyleScopedClasses['muted']} */ ;
+                (__VLS_ctx.subscriptionPayment.payment.dueDate);
+                if (__VLS_ctx.subscriptionPayment.pix) {
+                    __VLS_asFunctionalElement1(__VLS_intrinsics.img)({
+                        ...{ class: "pix-qr-code" },
+                        src: (`data:image/png;base64,${__VLS_ctx.subscriptionPayment.pix.encodedImage}`),
+                        alt: "QR Code PIX",
+                    });
+                    /** @type {__VLS_StyleScopedClasses['pix-qr-code']} */ ;
+                    __VLS_asFunctionalElement1(__VLS_intrinsics.textarea)({
+                        readonly: true,
+                        value: (__VLS_ctx.subscriptionPayment.pix.payload),
+                    });
+                    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                        ...{ onClick: (...[$event]) => {
+                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                                    return;
+                                if (!(__VLS_ctx.user &&
+                                    !__VLS_ctx.needsModuleChoice))
+                                    return;
+                                if (!(__VLS_ctx.dashboardTab === 'subscription'))
+                                    return;
+                                if (!(__VLS_ctx.subscriptionPayment))
+                                    return;
+                                if (!(__VLS_ctx.subscriptionPayment.pix))
+                                    return;
+                                __VLS_ctx.copyPaymentCode(__VLS_ctx.subscriptionPayment.pix.payload);
+                                // @ts-ignore
+                                [loading, loading, loading, dashboardTab, dashboardTab, formatCurrency, formatCurrency, upcomingAppointments, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, saveCompany, uploadCompanyLogo, uploadingLogo, uploadingLogo, uploadCompanyHero, subscription, subscription, subscription, subscription, subscription, subscription, subscription, subscription, subscriptionPayment, subscriptionPayment, subscriptionPayment, subscriptionPayment, subscriptionPayment, subscriptionPayment, subscriptionPayment, subscriptionPayment, generateSubscriptionPayment, subscriptionForm, subscriptionForm, subscriptionForm, subscriptionForm, subscriptionForm, copyPaymentCode,];
+                            } },
+                        ...{ class: "primary-button" },
+                        type: "button",
+                    });
+                    /** @type {__VLS_StyleScopedClasses['primary-button']} */ ;
+                }
+                if (__VLS_ctx.subscriptionPayment.boleto) {
+                    __VLS_asFunctionalElement1(__VLS_intrinsics.textarea)({
+                        readonly: true,
+                        value: (__VLS_ctx.subscriptionPayment.boleto.identificationField),
+                    });
+                    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                        ...{ onClick: (...[$event]) => {
+                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                                    return;
+                                if (!(__VLS_ctx.user &&
+                                    !__VLS_ctx.needsModuleChoice))
+                                    return;
+                                if (!(__VLS_ctx.dashboardTab === 'subscription'))
+                                    return;
+                                if (!(__VLS_ctx.subscriptionPayment))
+                                    return;
+                                if (!(__VLS_ctx.subscriptionPayment.boleto))
+                                    return;
+                                __VLS_ctx.copyPaymentCode(__VLS_ctx.subscriptionPayment.boleto.identificationField);
+                                // @ts-ignore
+                                [subscriptionPayment, subscriptionPayment, subscriptionPayment, copyPaymentCode,];
+                            } },
+                        ...{ class: "primary-button" },
+                        type: "button",
+                    });
+                    /** @type {__VLS_StyleScopedClasses['primary-button']} */ ;
+                    if (__VLS_ctx.subscriptionPayment.boleto.url) {
+                        __VLS_asFunctionalElement1(__VLS_intrinsics.a, __VLS_intrinsics.a)({
+                            ...{ class: "primary-link" },
+                            href: (__VLS_ctx.subscriptionPayment.boleto.url),
+                            target: "_blank",
+                            rel: "noopener noreferrer",
+                        });
+                        /** @type {__VLS_StyleScopedClasses['primary-link']} */ ;
+                    }
+                }
+            }
+        }
+        if (__VLS_ctx.dashboardTab === 'settings') {
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "settings-page" },
+            });
+            /** @type {__VLS_StyleScopedClasses['settings-page']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
+            if (__VLS_ctx.isSubscriptionActive && __VLS_ctx.selectedModule) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                    ...{ class: "settings-module-switch" },
+                });
+                /** @type {__VLS_StyleScopedClasses['settings-module-switch']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.h3, __VLS_intrinsics.h3)({});
+                __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+                    ...{ class: "muted" },
+                });
+                /** @type {__VLS_StyleScopedClasses['muted']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                    ...{ class: "choose-module-grid settings-module-grid" },
+                });
+                /** @type {__VLS_StyleScopedClasses['choose-module-grid']} */ ;
+                /** @type {__VLS_StyleScopedClasses['settings-module-grid']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
+                    ...{ class: "choose-module-card" },
+                    ...{ class: ({ selected: __VLS_ctx.selectedModule === 'PAGES' }) },
+                });
+                /** @type {__VLS_StyleScopedClasses['choose-module-card']} */ ;
+                /** @type {__VLS_StyleScopedClasses['selected']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+                    ...{ class: "eyebrow" },
+                });
+                /** @type {__VLS_StyleScopedClasses['eyebrow']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
+                __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                    ...{ onClick: (...[$event]) => {
+                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                                return;
+                            if (!(__VLS_ctx.user &&
+                                !__VLS_ctx.needsModuleChoice))
+                                return;
+                            if (!(__VLS_ctx.dashboardTab === 'settings'))
+                                return;
+                            if (!(__VLS_ctx.isSubscriptionActive && __VLS_ctx.selectedModule))
+                                return;
+                            __VLS_ctx.switchModule('PAGES');
+                            // @ts-ignore
+                            [isSubscriptionActive, dashboardTab, selectedModule, selectedModule, subscriptionPayment, subscriptionPayment, switchModule,];
+                        } },
+                    ...{ class: "primary-button" },
+                    type: "button",
+                    disabled: (__VLS_ctx.loading || __VLS_ctx.selectedModule === 'PAGES'),
+                });
+                /** @type {__VLS_StyleScopedClasses['primary-button']} */ ;
+                (__VLS_ctx.selectedModule === 'PAGES' ? 'Módulo atual' : 'Usar Smart Pages');
+                __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
+                    ...{ class: "choose-module-card" },
+                    ...{ class: ({ selected: __VLS_ctx.selectedModule === 'AGENDS' }) },
+                });
+                /** @type {__VLS_StyleScopedClasses['choose-module-card']} */ ;
+                /** @type {__VLS_StyleScopedClasses['selected']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+                    ...{ class: "eyebrow" },
+                });
+                /** @type {__VLS_StyleScopedClasses['eyebrow']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
+                __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                    ...{ onClick: (...[$event]) => {
+                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                                return;
+                            if (!(__VLS_ctx.user &&
+                                !__VLS_ctx.needsModuleChoice))
+                                return;
+                            if (!(__VLS_ctx.dashboardTab === 'settings'))
+                                return;
+                            if (!(__VLS_ctx.isSubscriptionActive && __VLS_ctx.selectedModule))
+                                return;
+                            __VLS_ctx.switchModule('AGENDS');
+                            // @ts-ignore
+                            [loading, selectedModule, selectedModule, selectedModule, switchModule,];
+                        } },
+                    ...{ class: "primary-button" },
+                    type: "button",
+                    disabled: (__VLS_ctx.loading || __VLS_ctx.selectedModule === 'AGENDS'),
+                });
+                /** @type {__VLS_StyleScopedClasses['primary-button']} */ ;
+                (__VLS_ctx.selectedModule === 'AGENDS' ? 'Módulo atual' : 'Usar Smart Agends');
+            }
+            else {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+                    ...{ class: "muted" },
+                });
+                /** @type {__VLS_StyleScopedClasses['muted']} */ ;
+            }
+        }
     }
 }
 if (__VLS_ctx.currentView === 'company' && __VLS_ctx.company) {
@@ -2181,7 +3184,7 @@ if (__VLS_ctx.currentView === 'company' && __VLS_ctx.company) {
         });
         /** @type {__VLS_StyleScopedClasses['public-card-link']} */ ;
         // @ts-ignore
-        [currentView, loading, dashboardTab, formatCurrency, upcomingAppointments, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, companyForm, saveCompany, uploadCompanyLogo, uploadingLogo, uploadingLogo, uploadCompanyHero, company, company, company, company, company, company, company, company, company, company, company, company, productSearch, filteredProducts,];
+        [currentView, loading, selectedModule, selectedModule, formatCurrency, company, company, company, company, company, company, company, company, company, company, company, company, productSearch, filteredProducts,];
     }
     if (__VLS_ctx.company.services?.length) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({

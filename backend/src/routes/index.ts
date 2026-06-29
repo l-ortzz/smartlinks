@@ -10,6 +10,10 @@ import { serviceRoutes } from "./services.routes.ts";
 import { uploadRoutes } from "./uploads.routes.ts";
 import { userRoutes } from "./users.routes.ts";
 import { analyticsRoutes } from "./analytics.routes.ts";
+import { subscriptionsRoutes } from "./subscriptions.routes.ts";
+import { subscriptionPaymentRoutes } from "./subscription-payment.routes.ts";
+import { webhookRoutes } from "./webhook.routes.ts";
+import { moduleRoutes } from "./module.routes.ts";
 
 export async function registerRoutes(app: FastifyInstance) {
   await app.register(healthRoutes);
@@ -23,4 +27,9 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(appointmentRoutes, { prefix: "/appointments" });
   await app.register(uploadRoutes, { prefix: "/uploads" });
   await app.register(analyticsRoutes, {prefix: "/analytics",});
+  await app.register(subscriptionsRoutes, {  prefix: "/subscriptions",});
+  await app.register(subscriptionPaymentRoutes, {  prefix: "/subscription-payment",  });
+  await app.register(webhookRoutes, {  prefix: "/webhook",});
+  await app.register(moduleRoutes, { prefix: "/module" });
 }
+  

@@ -12,16 +12,29 @@ import {
 } from "../schemas/products.schema.ts";
 
 import type { CreateProductInput } from "../types/products.ts";
+import { requireActiveSubscription } from "../middlewares/require-active-subscription.ts";
 
 export async function productRoutes(app: FastifyInstance) {
   app.get<{ Querystring: { userId?: string } }>(
     "/",
-    { preHandler: requireAuth, schema: listProductsSchema },
+    {
+      preHandler: [
+        requireAuth,
+        requireActiveSubscription,
+      ],
+      schema: listProductsSchema,
+    },
     listProducts,
   );
   app.post<{ Body: CreateProductInput }>(
     "/",
-    { preHandler: requireAuth, schema: createProductSchema },
+        {
+      preHandler: [
+        requireAuth,
+        requireActiveSubscription,
+      ],
+      schema: listProductsSchema,
+    },
     createProduct,
   );
     app.put<{
@@ -29,7 +42,13 @@ export async function productRoutes(app: FastifyInstance) {
     Body: { relatedIds: string[] };
   }>(
     "/:id/related",
-    { preHandler: requireAuth },
+        {
+      preHandler: [
+        requireAuth,
+        requireActiveSubscription,
+      ],
+      schema: listProductsSchema,
+    },
     updateRelatedProducts,
   );
 }

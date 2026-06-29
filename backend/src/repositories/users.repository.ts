@@ -55,6 +55,20 @@ export async function updateUserById(
   });
 }
 
+export async function updateUserCpfCnpj(
+  id: string,
+  cpfCnpj: string,
+) {
+  return prisma.user.update({
+    where: {
+      id,
+    },
+    data: {
+      cpfCnpj,
+    },
+  });
+}
+
 export async function findCompanyPageBySlug(slug: string) {
   return prisma.user.findUnique({
     where: {

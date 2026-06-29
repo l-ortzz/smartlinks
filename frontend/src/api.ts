@@ -13,6 +13,12 @@ export type Session = {
   token: string;
 };
 
+export type ModuleType = "PAGES" | "AGENDS";
+
+export type ModuleResponse = {
+  selectedModule: ModuleType | null;
+};
+
 export type ProductAttributeValue = {
   id: string;
   value: string;
@@ -149,6 +155,41 @@ export type Appointment = {
   service: Service;
 };
 
+export type Subscription = {
+  id: string;
+  status: "PENDING" | "ACTIVE" | "CANCELED" | "EXPIRED";
+  asaasSubscriptionId?: string | null;
+  paymentMethod?: "PIX" | "BOLETO" | null;
+  nextDueDate?: string | null;
+  plan: {
+    name: string;
+    price: string | number;
+  };
+};
+
+export type SubscriptionPaymentResult = {
+  status: Subscription["status"];
+  asaasSubscriptionId: string;
+  paymentMethod: "PIX" | "BOLETO";
+  nextDueDate: string;
+  payment: {
+    id: string;
+    status: string;
+    value: number;
+    dueDate: string;
+  };
+  pix: {
+    encodedImage: string;
+    payload: string;
+    expirationDate: string;
+  } | null;
+  boleto: {
+    url: string | null;
+    identificationField: string;
+    barCode: string | null;
+  } | null;
+};
+
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -181,9 +222,22 @@ async function request<T>(path: string, options: RequestInit = {}) {
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: "Request failed." }));
-    throw new Error(error.message ?? "Request failed.");
-  }
+    const error = await response
+      .json()
+      .catch(() => ({ message: "Request failed." }));
+
+    const requestError = new Error(
+      error.message ?? "Request failed.",
+    ) as Error & {
+      status?: number;
+      code?: string;
+    };
+
+    requestError.status = response.status;
+    requestError.code = error.code;
+
+    throw requestError;
+  }                                 
 
   if (response.status === 204) {
     return undefined as T;
@@ -332,6 +386,31 @@ export const api = {
     return request<Appointment>(`/appointments/${id}/status`, {
       method: "PUT",
       body: JSON.stringify({ status }),
+    });
+  },
+
+  getSubscription() {
+    return request<Subscription>("/subscriptions");
+  },
+
+  createSubscriptionPayment(input: {
+    cpfCnpj: string;
+    billingType: "PIX" | "BOLETO";
+  }) {
+    return request<SubscriptionPaymentResult>("/subscription-payment", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  getModule() {
+    return request<ModuleResponse>("/module");
+  },
+
+  updateModule(module: ModuleType) {
+    return request<ModuleResponse>("/module", {
+      method: "PATCH",
+      body: JSON.stringify({ module }),
     });
   },
 

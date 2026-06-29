@@ -2,6 +2,8 @@ import { findUserByEmail, findUserById, insertUser } from "../repositories/users
 import type { LoginInput, RegisterInput } from "../types/auth.ts";
 import { hashPassword, verifyPassword } from "../utils/password.ts";
 import { signToken } from "../utils/token.ts";
+import { createCustomer } from "../lib/asaas.ts";
+import { createInitialSubscription } from "../repositories/subscriptions.repository.ts";
 
 function toSessionUser(user: { id: string; name: string; email: string; slug: string }) {
   return {
@@ -23,6 +25,17 @@ export async function registerService(input: RegisterInput) {
   const user = await insertUser({
     ...input,
     passwordHash,
+  });
+
+  const customer = await createCustomer({
+  name: user.name,
+  email: user.email,
+  mobilePhone: input.numeroWhatsApp,
+  });
+
+  await createInitialSubscription({
+    userId: user.id,
+    asaasCustomerId: customer.id,
   });
 
   return {

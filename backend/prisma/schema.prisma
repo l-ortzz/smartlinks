@@ -26,6 +26,8 @@ model User {
   telefone       String?
   endereco       String?
   subscription   Subscription?
+  cpfCnpj        String?
+  selectedModule ModuleType?
   products       Product[]
   services       Service[]
   orders         Order[]
@@ -281,7 +283,13 @@ model Appointment {
   @@map("appointments")
 }
 
+enum ModuleType {
+  PAGES
+  AGENDS
+}
+
 enum SubscriptionStatus {
+  PENDING
   ACTIVE
   CANCELED
   EXPIRED
@@ -300,12 +308,21 @@ model Plan {
 }
 
 model Subscription {
-  id       String             @id @default(cuid())
-  userId   String             @unique
-  planId   String
-  status   SubscriptionStatus @default(ACTIVE)
-  startsAt DateTime           @default(now())
-  endsAt   DateTime?
+  id                   String             @id @default(cuid())
+
+  userId               String             @unique
+  planId               String
+
+  status SubscriptionStatus @default(PENDING)
+  asaasCustomerId      String?
+  asaasSubscriptionId  String? @unique
+
+  paymentMethod        String?
+
+  nextDueDate          DateTime?
+
+  startsAt             DateTime           @default(now())
+  endsAt               DateTime?
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   plan Plan @relation(fields: [planId], references: [id])

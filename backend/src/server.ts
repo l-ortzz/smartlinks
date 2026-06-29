@@ -2,8 +2,8 @@ import "dotenv/config";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
 import Fastify from "fastify";
-import { registerRoutes } from "./routes/index.ts";
 
+import { registerRoutes } from "./routes/index.ts";
 const app = Fastify({
   logger: true,
 });
