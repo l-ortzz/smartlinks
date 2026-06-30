@@ -55,7 +55,7 @@ export async function webhookService(payload: unknown) {
   const subscriptionId = await resolveSubscriptionId(webhookPayload);
 
   if (!subscriptionId) {
-    return;
+    throw new Error("Asaas subscription id is missing from payment.");
   }
 
   const updated = await updateSubscriptionByAsaasId(subscriptionId, {

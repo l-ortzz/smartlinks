@@ -7,6 +7,7 @@ export async function receiveWebhook(
 ) {
   try {
     await webhookService(request.body);
+    request.log.info("Asaas webhook received.");
 
     return reply.status(200).send({
       received: true,

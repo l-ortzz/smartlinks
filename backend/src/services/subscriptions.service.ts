@@ -1,11 +1,37 @@
-import { testConnection } from "../lib/asaas.ts";
+import {
+  listSubscriptionPayments,
+  testConnection,
+} from "../lib/asaas.ts";
 import {
   createSubscription,
   findSubscriptionByUserId,
+  updateSubscriptionByUserId,
 } from "../repositories/subscriptions.repository.ts";
 
 export async function getSubscriptionService(userId: string) {
-  return findSubscriptionByUserId(userId);
+  const subscription = await findSubscriptionByUserId(userId);
+
+  if (
+    subscription?.status !== "PENDING" ||
+    !subscription.asaasSubscriptionId
+  ) {
+    return subscription;
+  }
+
+  const payments = await listSubscriptionPayments(
+    subscription.asaasSubscriptionId,
+  );
+  const paymentWasConfirmed = payments.data.some((payment) =>
+    ["CONFIRMED", "RECEIVED"].includes(payment.status),
+  );
+
+  if (!paymentWasConfirmed) {
+    return subscription;
+  }
+
+  return updateSubscriptionByUserId(userId, {
+    status: "ACTIVE",
+  });
 }
 
 export async function createSubscriptionService(userId: string, planId: string) {
