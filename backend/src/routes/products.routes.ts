@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import {
   createProduct,
   listProducts,
+  updateProduct,
   updateRelatedProducts,
 } from "../controllers/products.controller.ts";
 
@@ -28,14 +29,28 @@ export async function productRoutes(app: FastifyInstance) {
   );
   app.post<{ Body: CreateProductInput }>(
     "/",
+    {
+      preHandler: [
+        requireAuth,
+        requireActiveSubscription,
+      ],
+      schema: createProductSchema,
+    },
+    createProduct,
+  );
+  app.put<{
+    Params: { id: string };
+    Body: Partial<CreateProductInput>;
+  }>(
+    "/:id",
         {
       preHandler: [
         requireAuth,
         requireActiveSubscription,
       ],
-      schema: listProductsSchema,
+      schema: createProductSchema,
     },
-    createProduct,
+    updateProduct,
   );
     app.put<{
     Params: { id: string };

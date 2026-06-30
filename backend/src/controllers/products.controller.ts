@@ -3,10 +3,11 @@ import type { FastifyReply, FastifyRequest } from "fastify";
 import {
   createProductService,
   listProductsService,
+  updateProductService,
   updateRelatedProductsService,
 } from "../services/products.service.ts";
 
-import type { CreateProductInput } from "../types/products.ts";
+import type { CreateProductInput, UpdateProductInput } from "../types/products.ts";
 type ListProductsRequest = FastifyRequest<{
   Querystring: {
     userId?: string;
@@ -32,6 +33,34 @@ export async function createProduct(
     userId: request.user.id,
   });
   return reply.status(201).send(product);
+}
+
+export async function updateProduct(
+  request: FastifyRequest<{
+    Params: { id: string };
+    Body: UpdateProductInput;
+  }>,
+  reply: FastifyReply,
+) {
+  if (!request.user) {
+    return reply.status(401).send({
+      message: "Authentication required.",
+    });
+  }
+
+  const product = await updateProductService(
+    request.params.id,
+    request.user.id,
+    request.body,
+  );
+
+  if (!product) {
+    return reply.status(404).send({
+      message: "Product not found.",
+    });
+  }
+
+  return reply.send(product);
 }
 
 type UpdateRelatedProductsRequest = FastifyRequest<{

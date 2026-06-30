@@ -1,10 +1,11 @@
 import {
   findProducts,
   insertProduct,
+  updateProductById,
   updateRelatedProducts,
 } from "../repositories/products.repository.ts";
 
-import type { CreateProductInput } from "../types/products.ts";
+import type { CreateProductInput, UpdateProductInput } from "../types/products.ts";
 
 export async function listProductsService(userId?: string) {
   return findProducts(userId);
@@ -12,6 +13,14 @@ export async function listProductsService(userId?: string) {
 
 export async function createProductService(input: CreateProductInput) {
   return insertProduct(input);
+}
+
+export async function updateProductService(
+  id: string,
+  userId: string,
+  input: UpdateProductInput,
+) {
+  return updateProductById(id, userId, input);
 }
 
 export async function updateRelatedProductsService(

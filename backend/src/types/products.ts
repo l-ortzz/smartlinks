@@ -15,3 +15,5 @@ export type CreateProductInput = {
     }>;
   }>;
 };
+
+export type UpdateProductInput = Partial<CreateProductInput>;

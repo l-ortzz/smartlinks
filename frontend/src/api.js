@@ -165,6 +165,12 @@ export const api = {
             body: JSON.stringify(input),
         });
     },
+    updateProduct(id, input) {
+        return request(`/products/${id}`, {
+            method: "PUT",
+            body: JSON.stringify(input),
+        });
+    },
     updateRelatedProducts(productId, relatedIds) {
         return request(`/products/${productId}/related`, {
             method: "PUT",

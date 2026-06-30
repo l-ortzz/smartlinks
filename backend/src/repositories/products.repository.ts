@@ -1,5 +1,5 @@
 import { prisma } from "../lib/prisma.ts";
-import type { CreateProductInput } from "../types/products.ts";
+import type { CreateProductInput, UpdateProductInput } from "../types/products.ts";
 
 export async function findProducts(userId?: string) {
   return prisma.product.findMany({
@@ -121,6 +121,71 @@ export async function insertProduct(input: CreateProductInput) {
       attributes: {
         include: {
           values: true,
+        },
+      },
+    },
+  });
+}
+
+export async function updateProductById(
+  id: string,
+  userId: string,
+  input: UpdateProductInput,
+) {
+  const product = await prisma.product.findFirst({
+    where: {
+      id,
+      userId,
+    },
+  });
+
+  if (!product) {
+    return null;
+  }
+
+  if (input.attributes) {
+    await prisma.productAttribute.deleteMany({
+      where: {
+        productId: id,
+      },
+    });
+  }
+
+  return prisma.product.update({
+    where: {
+      id,
+    },
+    data: {
+      slug: input.slug,
+      name: input.name,
+      description: input.description,
+      price: input.price,
+      images: input.images,
+      stock: input.stock,
+      active: input.active,
+      attributes: input.attributes
+        ? {
+            create: input.attributes.map((attribute) => ({
+              name: attribute.name,
+              values: {
+                create: attribute.values.map((value) => ({
+                  value: value.value,
+                  stock: value.stock,
+                })),
+              },
+            })),
+          }
+        : undefined,
+    },
+    include: {
+      attributes: {
+        include: {
+          values: true,
+        },
+      },
+      relatedFrom: {
+        include: {
+          related: true,
         },
       },
     },

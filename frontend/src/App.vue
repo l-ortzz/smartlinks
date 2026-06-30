@@ -5,6 +5,7 @@ import {
   computed,
   watch,
   onMounted,
+  nextTick,
 } from "vue";
 
 import {
@@ -90,7 +91,10 @@ const notice = ref("");
 const authMode = ref<"login" | "register">("login");
 const dashboardTab = ref<DashboardTab>("dashboard");
 const selectedModule = ref<ModuleType | null>(null);
+const showOnboarding = ref(false);
+const onboardingStorageKey = "smartlinks:onboarding-dismissed";
 const selectedProductId = ref("");
+const editingProductId = ref("");
 const relatedSelection = ref<string[]>([]);
 const productSearch = ref("");
 const editingServiceId = ref("");
@@ -391,6 +395,8 @@ const monitoredProducts = computed(
   () => analytics.value.length,
 );
 
+const appointmentFormRef = ref<HTMLElement | null>(null);
+
 const selectedPublicService = computed(() =>
   company.value?.services?.find(
     (service) => service.id === selectedServiceId.value,
@@ -476,6 +482,12 @@ function openDashboard() {
   }
 }
 
+function startOnboarding() {
+  localStorage.setItem(onboardingStorageKey, "true");
+  showOnboarding.value = false;
+  dashboardTab.value = "company";
+}
+
 async function loadModule() {
   const result = await api.getModule();
   selectedModule.value = result.selectedModule;
@@ -502,6 +514,11 @@ async function selectModule(module: ModuleType) {
     const result = await api.updateModule(module);
     selectedModule.value = result.selectedModule;
     dashboardTab.value = "dashboard";
+
+    if (!localStorage.getItem(onboardingStorageKey)) {
+      showOnboarding.value = true;
+    }
+
     await loadModuleDataForSelected();
     showNotice("Módulo configurado.");
   } catch (err) {
@@ -509,27 +526,6 @@ async function selectModule(module: ModuleType) {
       err instanceof Error
         ? err.message
         : "Nao foi possivel salvar o modulo.",
-    );
-  } finally {
-    loading.value = false;
-  }
-}
-
-async function switchModule(module: ModuleType) {
-  if (module === selectedModule.value) return;
-
-  loading.value = true;
-
-  try {
-    const result = await api.updateModule(module);
-    selectedModule.value = result.selectedModule;
-    dashboardTab.value = "dashboard";
-    showNotice("Modulo alterado.");
-  } catch (err) {
-    showError(
-      err instanceof Error
-        ? err.message
-        : "Nao foi possivel trocar o modulo.",
     );
   } finally {
     loading.value = false;
@@ -569,6 +565,10 @@ async function loadSession() {
       }
 
       await loadModuleDataForSelected();
+
+      if (!localStorage.getItem(onboardingStorageKey)) {
+        showOnboarding.value = true;
+      }
   } catch {
     clearToken();
     user.value = null;
@@ -864,51 +864,101 @@ function removeProductImage(index: number) {
 
 function parseValues(value: string) {
   return value
-    .split(",")
+    .replace(/\s+e\s+/gi, ",")
+    .split(/[,\n;]/)
     .map((item) => item.trim())
-    .filter(Boolean)
-    .map((item) => ({ value: item }));
+    .filter(Boolean);
+    }
+
+function resetProductForm() {
+  editingProductId.value = "";
+  productForm.value = {
+    name: "",
+    slug: "",
+    description: "",
+    price: 0,
+    image: "",
+    images: [],
+    colorValues: "",
+    sizeValues: "",
+  };
 }
 
-async function createProduct() {
-  loading.value = true;
+function buildProductInput() {
+  const attributes = [];
+  const colors = parseValues(productForm.value.colorValues);
+  const sizes = parseValues(productForm.value.sizeValues);
 
-  try {
-    const attributes = [];
-    const colors = parseValues(productForm.value.colorValues);
-    const sizes = parseValues(productForm.value.sizeValues);
-
-    if (colors.length) attributes.push({ name: "Cor", values: colors });
-    if (sizes.length) attributes.push({ name: "Tamanho", values: sizes });
-
-    await api.createProduct({
-      name: productForm.value.name,
-      slug: productForm.value.slug || slugify(productForm.value.name),
-      description: productForm.value.description,
-      price: Number(productForm.value.price),
-      images: productForm.value.images.length
-        ? productForm.value.images
-        : productForm.value.image
-          ? [productForm.value.image]
-          : undefined,
-      attributes,
+  if (colors.length) {
+    attributes.push({
+      name: "Cor",
+      values: colors.map((value) => ({ value })),
     });
+  }
 
-    productForm.value = {
-      name: "",
-      slug: "",
-      description: "",
-      price: 0,
-      image: "",
-      images: [],
-      colorValues: "",
-      sizeValues: "",
-    };
+  if (sizes.length) {
+    attributes.push({
+      name: "Tamanho",
+      values: sizes.map((value) => ({ value })),
+    });
+  }
+
+  return {
+    name: productForm.value.name,
+    slug: productForm.value.slug || slugify(productForm.value.name),
+    description: productForm.value.description,
+    price: Number(productForm.value.price),
+    images: productForm.value.images.length
+      ? productForm.value.images
+      : productForm.value.image
+        ? [productForm.value.image]
+        : undefined,
+    attributes,
+  };
+}
+
+function editProduct(product: Product) {
+  editingProductId.value = product.id;
+
+  productForm.value = {
+    name: product.name,
+    slug: product.slug,
+    description: product.description ?? "",
+    price: Number(product.price),
+    image: "",
+    images: product.images ?? [],
+    colorValues:
+      product.attributes
+        ?.find((attribute) => attribute.name === "Cor")
+        ?.values.map((value) => value.value)
+        .join(", ") ?? "",
+    sizeValues:
+      product.attributes
+        ?.find((attribute) => attribute.name === "Tamanho")
+        ?.values.map((value) => value.value)
+        .join(", ") ?? "",
+  };
+}
+
+    async function createProduct() {
+      loading.value = true;
+
+      try {
+    const input = buildProductInput();
+    const wasEditing = Boolean(editingProductId.value);
+
+    if (editingProductId.value) {
+      await api.updateProduct(editingProductId.value, input);
+    } else {
+      await api.createProduct(input);
+    }
+
+    resetProductForm();
 
     await loadProducts();
-    showNotice("Produto criado.");
+    showNotice(wasEditing ? "Produto atualizado." : "Produto criado.");
   } catch (err) {
-    showError(err instanceof Error ? err.message : "Nao foi possivel criar o produto.");
+    showError(err instanceof Error ? err.message : "Nao foi possivel salvar o produto.");
   } finally {
     loading.value = false;
   }
@@ -1081,7 +1131,13 @@ async function removeAvailability(id: string) {
 
 function selectServiceForAppointment(serviceId: string) {
   selectedServiceId.value = serviceId;
-  appointmentForm.value.time = "";
+
+  nextTick(() => {
+    appointmentFormRef.value?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  });
 }
 
 async function createPublicAppointment() {
@@ -1195,31 +1251,18 @@ async function copyProductLink(productSlug: string) {
 }
 
 function openRelatedProducts(product: any) {
+  if (selectedProductId.value === product.id) {
+    selectedProductId.value = "";
+    relatedSelection.value = [];
+    return;
+  }
+
   selectedProductId.value = product.id;
 
   relatedSelection.value =
     product.relatedFrom?.map(
       (item: any) => item.related.id,
     ) ?? [];
-}
-
-function toggleRelatedProduct(productId: string) {
-  const index =
-    relatedSelection.value.indexOf(productId);
-
-  if (index >= 0) {
-    relatedSelection.value.splice(index, 1);
-    return;
-  }
-
-  if (relatedSelection.value.length >= 4) {
-    showError(
-      "Voce pode selecionar no maximo 4 produtos.",
-    );
-    return;
-  }
-
-  relatedSelection.value.push(productId);
 }
 
 async function saveRelatedProducts() {
@@ -1231,7 +1274,12 @@ async function saveRelatedProducts() {
       relatedSelection.value,
     );
 
-    showNotice("Relacionamentos atualizados.");
+      showNotice("Relacionamentos atualizados.");
+
+      selectedProductId.value = "";
+      relatedSelection.value = [];
+
+      await loadProducts();
 
     await loadProducts();
   } catch {
@@ -1633,44 +1681,64 @@ onMounted(async () => {
           @submit.prevent="submitAuth"
         >
 
-          <input
+          <label
             v-if="authMode === 'register'"
-            v-model="authForm.name"
-            required
-            placeholder="Nome da empresa"
-          />
+            class="form-field"
+          >
+            <span>Nome da empresa</span>
+            <input
+              v-model="authForm.name"
+              required
+              placeholder="Nome da empresa"
+            />
+          </label>
 
-          <input
-            v-model="authForm.email"
-            required
-            type="email"
-            placeholder="Email"
-          />
+          <label class="form-field">
+            <span>Email</span>
+            <input
+              v-model="authForm.email"
+              required
+              type="email"
+              placeholder="Email"
+            />
+          </label>
 
-          <input
-            v-model="authForm.password"
-            required
-            type="password"
-            placeholder="Senha"
-          />
+          <label class="form-field">
+            <span>Senha</span>
+            <input
+              v-model="authForm.password"
+              required
+              type="password"
+              placeholder="Senha"
+            />
+          </label>
 
           <template v-if="authMode === 'register'">
 
-            <input
-              v-model="authForm.slug"
-              placeholder="slug-da-empresa"
-            />
+            <label class="form-field">
+              <span>Slug</span>
+              <input
+                v-model="authForm.slug"
+                placeholder="slug-da-empresa"
+              />
+            </label>
 
-            <input
-              v-model="authForm.numeroWhatsApp"
-              required
-              placeholder="WhatsApp"
-            />
+            <label class="form-field">
+              <span>WhatsApp</span>
+              <input
+                v-model="authForm.numeroWhatsApp"
+                required
+                placeholder="WhatsApp"
+              />
+            </label>
 
-            <textarea
-              v-model="authForm.description"
-              placeholder="Descrição"
-            />
+            <label class="form-field">
+              <span>Descrição</span>
+              <textarea
+                v-model="authForm.description"
+                placeholder="Descrição"
+              />
+            </label>
 
           </template>
 
@@ -1720,7 +1788,7 @@ onMounted(async () => {
         <p class="eyebrow">Smart Links</p>
         <h1>Escolha seu módulo</h1>
         <p class="muted">
-          Selecione como deseja usar a plataforma. Você pode trocar depois em Configurações.
+          Escolha o módulo que melhor representa seu negócio. Essa escolha define seu painel inicial.
         </p>
       </div>
 
@@ -1765,8 +1833,70 @@ onMounted(async () => {
       </div>
     </section>
 
-  <section
-    v-if="currentView === 'dashboard' && canShowDashboardWorkspace"
+    <section
+      v-if="currentView === 'dashboard' && canShowDashboardWorkspace && showOnboarding"
+      class="onboarding-page"
+    >
+      <div class="onboarding-content">
+        <p class="eyebrow">Bem-vindo à Smart Links</p>
+
+        <h1>
+          Sua vitrine digital está quase pronta
+        </h1>
+
+        <p class="onboarding-subtitle">
+          Complete as informações principais e comece a receber clientes pelo WhatsApp.
+        </p>
+
+        <div class="onboarding-steps">
+          <div class="onboarding-step">
+            <span>1</span>
+            <div>
+              <strong>Complete os dados da empresa</strong>
+              <p>Adicione logo, descrição, WhatsApp e redes sociais.</p>
+            </div>
+          </div>
+
+          <div class="onboarding-step">
+            <span>2</span>
+            <div>
+              <strong>Cadastre seu primeiro produto ou serviço</strong>
+              <p>Mostre o que sua empresa oferece aos clientes.</p>
+            </div>
+          </div>
+
+          <div class="onboarding-step">
+            <span>3</span>
+            <div>
+              <strong>Compartilhe sua página</strong>
+              <p>Envie o link para seus clientes e comece a vender.</p>
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          class="primary-button onboarding-button"
+          @click="startOnboarding"
+        >
+          Começar agora →
+        </button>
+
+        <p class="onboarding-note">
+          Você pode editar tudo depois nas configurações.
+        </p>
+      </div>
+
+      <div class="onboarding-visual">
+      <img
+        src="/onboarding-preview.png"
+        alt="Prévia Smart Links"
+      />
+    </div>
+    </section>
+
+    <section
+    v-if="currentView === 'dashboard' && canShowDashboardWorkspace && !showOnboarding"
     class="workspace"
     :class="{ 'workspace-single': sidebarMode === 'none' }"
   >
@@ -1989,9 +2119,22 @@ onMounted(async () => {
           v-if="user && dashboardTab === 'products' && showPagesContent"
           class="product-form"
           @submit.prevent="createProduct"
-        >          <input v-model="productForm.name" required placeholder="Nome do produto" />
-          <input v-model="productForm.slug" placeholder="slug-do-produto" />
-          <input v-model.number="productForm.price" required type="number" min="0" step="0.01" placeholder="Preco" />
+        >
+          <label class="form-field">
+            <span>Nome do produto</span>
+            <input v-model="productForm.name" required placeholder="Nome do produto" />
+          </label>
+
+          <label class="form-field">
+            <span>Slug</span>
+            <input v-model="productForm.slug" placeholder="slug-do-produto" />
+          </label>
+
+          <label class="form-field">
+            <span>Preço</span>
+            <input v-model.number="productForm.price" required type="number" min="0" step="0.01" placeholder="Preco" />
+          </label>
+
           <label class="logo-upload product-image-upload">
             <span>Imagens do produto</span>
             <input
@@ -2031,11 +2174,38 @@ onMounted(async () => {
             </div>
           </div>
 
-          <input v-model="productForm.image" placeholder="URL da imagem" />
-          <input v-model="productForm.colorValues" placeholder="Cores: Preto, Branco" />
-          <input v-model="productForm.sizeValues" placeholder="Tamanhos: P, M, G" />
-          <textarea v-model="productForm.description" placeholder="Descricao" />
-          <button class="primary-button" type="submit" :disabled="loading">Criar produto</button>
+          <label class="form-field">
+            <span>URL da imagem</span>
+            <input v-model="productForm.image" placeholder="URL da imagem" />
+          </label>
+
+          <label class="form-field">
+            <span>Cores</span>
+            <input v-model="productForm.colorValues" placeholder="Cores: Preto, Branco" />
+          </label>
+
+          <label class="form-field">
+            <span>Tamanhos</span>
+            <input v-model="productForm.sizeValues" placeholder="Tamanhos: P, M, G" />
+          </label>
+
+          <label class="form-field">
+            <span>Descrição</span>
+            <textarea v-model="productForm.description" placeholder="Descricao" />
+          </label>
+
+          <button class="primary-button" type="submit" :disabled="loading">
+            {{ editingProductId ? 'Salvar alterações' : 'Criar produto' }}
+          </button>
+
+          <button
+            v-if="editingProductId"
+            class="ghost-button"
+            type="button"
+            @click="resetProductForm"
+          >
+            Cancelar Edição
+          </button>
         </form>
 
           <div
@@ -2065,6 +2235,14 @@ onMounted(async () => {
                   <button
                     type="button"
                     class="ghost-button"
+                    @click="editProduct(product)"
+                  >
+                    Editar
+                  </button>
+
+                  <button
+                    type="button"
+                    class="ghost-button"
                     @click="openRelatedProducts(product)"
                   >
                     Relacionados
@@ -2076,7 +2254,16 @@ onMounted(async () => {
                     v-if="selectedProductId === product.id"
                     class="related-products-panel"
                   >
-                    <h4>Produtos Relacionados</h4>
+                    <div class="panel-header">
+                    <h3>Produtos relacionados</h3>
+
+                    <button
+                      type="button"
+                      class="ghost-button"
+                      @click="selectedProductId = ''; relatedSelection = []"                    >
+                      Fechar
+                    </button>
+                  </div>
 
                     <p>
                       Selecione até 4 produtos.
@@ -2092,7 +2279,7 @@ onMounted(async () => {
                           selected:
                             relatedSelection.includes(candidate.id)
                         }"
-                        @click="toggleRelatedProduct(candidate.id)"
+                        @click="selectedProductId = ''; relatedSelection = []"
                       >
                         <img
                           :src="
@@ -2203,28 +2390,37 @@ onMounted(async () => {
             class="product-form"
             @submit.prevent="saveService"
           >
-            <input
-              v-model="serviceForm.name"
-              required
-              placeholder="Nome do serviço"
-            />
+            <label class="form-field">
+              <span>Nome do serviço</span>
+              <input
+                v-model="serviceForm.name"
+                required
+                placeholder="Nome do serviço"
+              />
+            </label>
 
-            <input
-              v-model.number="serviceForm.duration"
-              required
-              type="number"
-              min="1"
-              placeholder="Duração em minutos"
-            />
+            <label class="form-field">
+              <span>Duração em minutos</span>
+              <input
+                v-model.number="serviceForm.duration"
+                required
+                type="number"
+                min="1"
+                placeholder="Duração em minutos"
+              />
+            </label>
 
-            <input
-              v-model.number="serviceForm.price"
-              required
-              type="number"
-              min="0"
-              step="0.01"
-              placeholder="Preço"
-            />
+            <label class="form-field">
+              <span>Preço</span>
+              <input
+                v-model.number="serviceForm.price"
+                required
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="Preço"
+              />
+            </label>
 
             <label class="service-active-toggle">
               <input
@@ -2264,10 +2460,13 @@ onMounted(async () => {
               </div>
             </div>
 
-            <textarea
-              v-model="serviceForm.description"
-              placeholder="Descrição"
-            />
+            <label class="form-field">
+              <span>Descrição</span>
+              <textarea
+                v-model="serviceForm.description"
+                placeholder="Descrição"
+              />
+            </label>
 
             <button
               class="primary-button"
@@ -2352,15 +2551,18 @@ onMounted(async () => {
             class="availability-form"
             @submit.prevent="saveAvailability"
           >
-            <select v-model="availabilityForm.weekday">
-              <option
-                v-for="weekday in weekdayOptions"
-                :key="weekday.value"
-                :value="weekday.value"
-              >
-                {{ weekday.label }}
-              </option>
-            </select>
+            <label class="form-field">
+              <span>Dia da semana</span>
+              <select v-model="availabilityForm.weekday">
+                <option
+                  v-for="weekday in weekdayOptions"
+                  :key="weekday.value"
+                  :value="weekday.value"
+                >
+                  {{ weekday.label }}
+                </option>
+              </select>
+            </label>
 
             <label>
               <span>Hora inicial</span>
@@ -2574,39 +2776,57 @@ onMounted(async () => {
 
             </div>  
             <div class="settings-divider"></div>
-            <input
+            <label class="form-field">
+              <span>Nome da empresa</span>
+              <input
                 v-model="companyForm.name"
                 placeholder="Nome da empresa"
               />
+            </label>
 
-              <textarea
+              <label class="form-field">
+                <span>Descrição</span>
+                <textarea
                 v-model="companyForm.description"
                 placeholder="Descrição"
               />
+              </label>
 
-              <input
+              <label class="form-field">
+                <span>Instagram</span>
+                <input
                 v-model="companyForm.instagram"
                 placeholder="Instagram"
               />
+              </label>
 
               <div class="settings-divider"></div>
                 <div class="settings-section">
                   <h3>Contato</h3>
                 </div>
-              <input
+              <label class="form-field">
+                <span>Telefone</span>
+                <input
                 v-model="companyForm.telefone"
                 placeholder="Telefone"
               />
+              </label>
 
-              <input
+              <label class="form-field">
+                <span>WhatsApp</span>
+                <input
                 v-model="companyForm.numeroWhatsApp"
                 placeholder="WhatsApp"
               />
+              </label>
 
-              <input
+              <label class="form-field">
+                <span>Endereço</span>
+                <input
                 v-model="companyForm.endereco"
                 placeholder="Endereço"
               />
+              </label>
 
               <div class="settings-divider"></div>
               <label class="logo-upload">
@@ -2630,16 +2850,22 @@ onMounted(async () => {
                   />
                 </label>
 
-                <input
+                <label class="form-field">
+                  <span>URL do banner</span>
+                  <input
                   v-model="companyForm.heroImage"
                   placeholder="URL do Banner"
                 />
+                </label>
               </label>
 
-              <input
+              <label class="form-field">
+                <span>URL da logo</span>
+                <input
                 v-model="companyForm.logo"
                 placeholder="URL da Logo"
               />
+              </label>
 
               <button
                 class="primary-button"
@@ -2808,58 +3034,14 @@ onMounted(async () => {
           v-if="dashboardTab === 'settings'"
           class="settings-page"
         >
-
-          <h2>Configurações</h2>
-
-          <div
-            v-if="isSubscriptionActive && selectedModule"
-            class="settings-module-switch"
-          >
-            <h3>Trocar módulo</h3>
-            <p class="muted">
-              Altere entre Smart Pages e Smart Agends sem novo pagamento.
-            </p>
-
-            <div class="choose-module-grid settings-module-grid">
-              <article
-                class="choose-module-card"
-                :class="{ selected: selectedModule === 'PAGES' }"
-              >
-                <p class="eyebrow">Smart Pages</p>
-                <h2>Produtos e vendas</h2>
-                <button
-                  class="primary-button"
-                  type="button"
-                  :disabled="loading || selectedModule === 'PAGES'"
-                  @click="switchModule('PAGES')"
-                >
-                  {{ selectedModule === 'PAGES' ? 'Módulo atual' : 'Usar Smart Pages' }}
-                </button>
-              </article>
-
-              <article
-                class="choose-module-card"
-                :class="{ selected: selectedModule === 'AGENDS' }"
-              >
-                <p class="eyebrow">Smart Agends</p>
-                <h2>Serviços e agenda</h2>
-                <button
-                  class="primary-button"
-                  type="button"
-                  :disabled="loading || selectedModule === 'AGENDS'"
-                  @click="switchModule('AGENDS')"
-                >
-                  {{ selectedModule === 'AGENDS' ? 'Módulo atual' : 'Usar Smart Agends' }}
-                </button>
-              </article>
-            </div>
-          </div>
-
-          <p v-else class="muted">
-            Configurações da conta em desenvolvimento.
+        <div class="empty-state">
+          <h3>Configurações</h3>
+          <p class="muted">
+            Seu módulo já foi definido para esta empresa.
           </p>
-
         </div>
+         
+      </div>
       </section>
     </section>
 
@@ -3018,6 +3200,7 @@ onMounted(async () => {
 
           <form
             v-if="selectedPublicService"
+            ref="appointmentFormRef"
             class="public-appointment-form"
             @submit.prevent="createPublicAppointment"
           >
@@ -3055,17 +3238,23 @@ onMounted(async () => {
               </select>
             </label>
 
-            <input
-              v-model="appointmentForm.customerName"
-              required
-              placeholder="Seu nome"
-            />
+            <label class="form-field">
+              <span>Nome</span>
+              <input
+                v-model="appointmentForm.customerName"
+                required
+                placeholder="Seu nome"
+              />
+            </label>
 
-            <input
-              v-model="appointmentForm.customerPhone"
-              required
-              placeholder="Seu WhatsApp"
-            />
+            <label class="form-field">
+              <span>WhatsApp</span>
+              <input
+                v-model="appointmentForm.customerPhone"
+                required
+                placeholder="Seu WhatsApp"
+              />
+            </label>
 
             <p
               v-if="appointmentForm.date && !availableAppointmentTimes.length"

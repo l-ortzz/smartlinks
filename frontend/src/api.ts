@@ -421,6 +421,13 @@ export const api = {
     });
   },
 
+  updateProduct(id: string, input: CreateProductInput) {
+    return request<Product>(`/products/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
+  },
+
   updateRelatedProducts(
   productId: string,
   relatedIds: string[],

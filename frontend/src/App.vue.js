@@ -1,4 +1,4 @@
-import { ref, computed, watch, onMounted, } from "vue";
+import { ref, computed, watch, onMounted, nextTick, } from "vue";
 import { api, clearToken, getToken, setToken, } from "./api";
 import { formatCurrency, slugify, } from "./format";
 function goToDashboard() { window.location.hash = "#/dashboard"; }
@@ -44,7 +44,10 @@ const notice = ref("");
 const authMode = ref("login");
 const dashboardTab = ref("dashboard");
 const selectedModule = ref(null);
+const showOnboarding = ref(false);
+const onboardingStorageKey = "smartlinks:onboarding-dismissed";
 const selectedProductId = ref("");
+const editingProductId = ref("");
 const relatedSelection = ref([]);
 const productSearch = ref("");
 const editingServiceId = ref("");
@@ -264,6 +267,7 @@ const filteredProducts = computed(() => {
 const totalClicks = computed(() => analytics.value.reduce((sum, item) => sum + item.clicks, 0));
 const totalReservations = computed(() => analytics.value.reduce((sum, item) => sum + item.reservations, 0));
 const monitoredProducts = computed(() => analytics.value.length);
+const appointmentFormRef = ref(null);
 const selectedPublicService = computed(() => company.value?.services?.find((service) => service.id === selectedServiceId.value));
 const availableAppointmentTimes = computed(() => {
     const service = selectedPublicService.value;
@@ -324,6 +328,11 @@ function openDashboard() {
         loadAnalytics();
     }
 }
+function startOnboarding() {
+    localStorage.setItem(onboardingStorageKey, "true");
+    showOnboarding.value = false;
+    dashboardTab.value = "company";
+}
 async function loadModule() {
     const result = await api.getModule();
     selectedModule.value = result.selectedModule;
@@ -346,6 +355,9 @@ async function selectModule(module) {
         const result = await api.updateModule(module);
         selectedModule.value = result.selectedModule;
         dashboardTab.value = "dashboard";
+        if (!localStorage.getItem(onboardingStorageKey)) {
+            showOnboarding.value = true;
+        }
         await loadModuleDataForSelected();
         showNotice("Módulo configurado.");
     }
@@ -353,25 +365,6 @@ async function selectModule(module) {
         showError(err instanceof Error
             ? err.message
             : "Nao foi possivel salvar o modulo.");
-    }
-    finally {
-        loading.value = false;
-    }
-}
-async function switchModule(module) {
-    if (module === selectedModule.value)
-        return;
-    loading.value = true;
-    try {
-        const result = await api.updateModule(module);
-        selectedModule.value = result.selectedModule;
-        dashboardTab.value = "dashboard";
-        showNotice("Modulo alterado.");
-    }
-    catch (err) {
-        showError(err instanceof Error
-            ? err.message
-            : "Nao foi possivel trocar o modulo.");
     }
     finally {
         loading.value = false;
@@ -403,6 +396,9 @@ async function loadSession() {
             return;
         }
         await loadModuleDataForSelected();
+        if (!localStorage.getItem(onboardingStorageKey)) {
+            showOnboarding.value = true;
+        }
     }
     catch {
         clearToken();
@@ -650,48 +646,89 @@ function removeProductImage(index) {
 }
 function parseValues(value) {
     return value
-        .split(",")
+        .replace(/\s+e\s+/gi, ",")
+        .split(/[,\n;]/)
         .map((item) => item.trim())
-        .filter(Boolean)
-        .map((item) => ({ value: item }));
+        .filter(Boolean);
+}
+function resetProductForm() {
+    editingProductId.value = "";
+    productForm.value = {
+        name: "",
+        slug: "",
+        description: "",
+        price: 0,
+        image: "",
+        images: [],
+        colorValues: "",
+        sizeValues: "",
+    };
+}
+function buildProductInput() {
+    const attributes = [];
+    const colors = parseValues(productForm.value.colorValues);
+    const sizes = parseValues(productForm.value.sizeValues);
+    if (colors.length) {
+        attributes.push({
+            name: "Cor",
+            values: colors.map((value) => ({ value })),
+        });
+    }
+    if (sizes.length) {
+        attributes.push({
+            name: "Tamanho",
+            values: sizes.map((value) => ({ value })),
+        });
+    }
+    return {
+        name: productForm.value.name,
+        slug: productForm.value.slug || slugify(productForm.value.name),
+        description: productForm.value.description,
+        price: Number(productForm.value.price),
+        images: productForm.value.images.length
+            ? productForm.value.images
+            : productForm.value.image
+                ? [productForm.value.image]
+                : undefined,
+        attributes,
+    };
+}
+function editProduct(product) {
+    editingProductId.value = product.id;
+    productForm.value = {
+        name: product.name,
+        slug: product.slug,
+        description: product.description ?? "",
+        price: Number(product.price),
+        image: "",
+        images: product.images ?? [],
+        colorValues: product.attributes
+            ?.find((attribute) => attribute.name === "Cor")
+            ?.values.map((value) => value.value)
+            .join(", ") ?? "",
+        sizeValues: product.attributes
+            ?.find((attribute) => attribute.name === "Tamanho")
+            ?.values.map((value) => value.value)
+            .join(", ") ?? "",
+    };
 }
 async function createProduct() {
     loading.value = true;
     try {
-        const attributes = [];
-        const colors = parseValues(productForm.value.colorValues);
-        const sizes = parseValues(productForm.value.sizeValues);
-        if (colors.length)
-            attributes.push({ name: "Cor", values: colors });
-        if (sizes.length)
-            attributes.push({ name: "Tamanho", values: sizes });
-        await api.createProduct({
-            name: productForm.value.name,
-            slug: productForm.value.slug || slugify(productForm.value.name),
-            description: productForm.value.description,
-            price: Number(productForm.value.price),
-            images: productForm.value.images.length
-                ? productForm.value.images
-                : productForm.value.image
-                    ? [productForm.value.image]
-                    : undefined,
-            attributes,
-        });
-        productForm.value = {
-            name: "",
-            slug: "",
-            description: "",
-            price: 0,
-            image: "",
-            images: [],
-            colorValues: "",
-            sizeValues: "",
-        };
+        const input = buildProductInput();
+        const wasEditing = Boolean(editingProductId.value);
+        if (editingProductId.value) {
+            await api.updateProduct(editingProductId.value, input);
+        }
+        else {
+            await api.createProduct(input);
+        }
+        resetProductForm();
         await loadProducts();
-        showNotice("Produto criado.");
+        showNotice(wasEditing ? "Produto atualizado." : "Produto criado.");
     }
     catch (err) {
-        showError(err instanceof Error ? err.message : "Nao foi possivel criar o produto.");
+        showError(err instanceof Error ? err.message : "Nao foi possivel salvar o produto.");
     }
     finally {
         loading.value = false;
@@ -847,7 +884,12 @@ async function removeAvailability(id) {
 }
 function selectServiceForAppointment(serviceId) {
     selectedServiceId.value = serviceId;
-    appointmentForm.value.time = "";
+    nextTick(() => {
+        appointmentFormRef.value?.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+        });
+    });
 }
 async function createPublicAppointment() {
     if (!company.value || !selectedServiceId.value)
@@ -944,21 +986,14 @@ async function copyProductLink(productSlug) {
     }
 }
 function openRelatedProducts(product) {
+    if (selectedProductId.value === product.id) {
+        selectedProductId.value = "";
+        relatedSelection.value = [];
+        return;
+    }
     selectedProductId.value = product.id;
     relatedSelection.value =
         product.relatedFrom?.map((item) => item.related.id) ?? [];
-}
-function toggleRelatedProduct(productId) {
-    const index = relatedSelection.value.indexOf(productId);
-    if (index >= 0) {
-        relatedSelection.value.splice(index, 1);
-        return;
-    }
-    if (relatedSelection.value.length >= 4) {
-        showError("Voce pode selecionar no maximo 4 produtos.");
-        return;
-    }
-    relatedSelection.value.push(productId);
 }
 async function saveRelatedProducts() {
     if (!selectedProductId.value)
@@ -966,6 +1001,9 @@ async function saveRelatedProducts() {
     try {
         await api.updateRelatedProducts(selectedProductId.value, relatedSelection.value);
         showNotice("Relacionamentos atualizados.");
+        selectedProductId.value = "";
+        relatedSelection.value = [];
+        await loadProducts();
         await loadProducts();
     }
     catch {
@@ -1344,18 +1382,33 @@ if (__VLS_ctx.currentView === 'dashboard' && !__VLS_ctx.user) {
     });
     /** @type {__VLS_StyleScopedClasses['form-grid']} */ ;
     if (__VLS_ctx.authMode === 'register') {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+            ...{ class: "form-field" },
+        });
+        /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
         __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
             required: true,
             placeholder: "Nome da empresa",
         });
         (__VLS_ctx.authForm.name);
     }
+    __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+        ...{ class: "form-field" },
+    });
+    /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
         required: true,
         type: "email",
         placeholder: "Email",
     });
     (__VLS_ctx.authForm.email);
+    __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+        ...{ class: "form-field" },
+    });
+    /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
     __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
         required: true,
         type: "password",
@@ -1363,15 +1416,30 @@ if (__VLS_ctx.currentView === 'dashboard' && !__VLS_ctx.user) {
     });
     (__VLS_ctx.authForm.password);
     if (__VLS_ctx.authMode === 'register') {
+        __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+            ...{ class: "form-field" },
+        });
+        /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
         __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
             placeholder: "slug-da-empresa",
         });
         (__VLS_ctx.authForm.slug);
+        __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+            ...{ class: "form-field" },
+        });
+        /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
         __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
             required: true,
             placeholder: "WhatsApp",
         });
         (__VLS_ctx.authForm.numeroWhatsApp);
+        __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+            ...{ class: "form-field" },
+        });
+        /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+        __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
         __VLS_asFunctionalElement1(__VLS_intrinsics.textarea)({
             value: (__VLS_ctx.authForm.description),
             placeholder: "Descrição",
@@ -1491,7 +1559,73 @@ if (__VLS_ctx.currentView === 'dashboard' &&
     });
     /** @type {__VLS_StyleScopedClasses['primary-button']} */ ;
 }
-if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace) {
+if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && __VLS_ctx.showOnboarding) {
+    __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
+        ...{ class: "onboarding-page" },
+    });
+    /** @type {__VLS_StyleScopedClasses['onboarding-page']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "onboarding-content" },
+    });
+    /** @type {__VLS_StyleScopedClasses['onboarding-content']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+        ...{ class: "eyebrow" },
+    });
+    /** @type {__VLS_StyleScopedClasses['eyebrow']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.h1, __VLS_intrinsics.h1)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+        ...{ class: "onboarding-subtitle" },
+    });
+    /** @type {__VLS_StyleScopedClasses['onboarding-subtitle']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "onboarding-steps" },
+    });
+    /** @type {__VLS_StyleScopedClasses['onboarding-steps']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "onboarding-step" },
+    });
+    /** @type {__VLS_StyleScopedClasses['onboarding-step']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "onboarding-step" },
+    });
+    /** @type {__VLS_StyleScopedClasses['onboarding-step']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "onboarding-step" },
+    });
+    /** @type {__VLS_StyleScopedClasses['onboarding-step']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.strong, __VLS_intrinsics.strong)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
+    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+        ...{ onClick: (__VLS_ctx.startOnboarding) },
+        type: "button",
+        ...{ class: "primary-button onboarding-button" },
+    });
+    /** @type {__VLS_StyleScopedClasses['primary-button']} */ ;
+    /** @type {__VLS_StyleScopedClasses['onboarding-button']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+        ...{ class: "onboarding-note" },
+    });
+    /** @type {__VLS_StyleScopedClasses['onboarding-note']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+        ...{ class: "onboarding-visual" },
+    });
+    /** @type {__VLS_StyleScopedClasses['onboarding-visual']} */ ;
+    __VLS_asFunctionalElement1(__VLS_intrinsics.img)({
+        src: "/onboarding-preview.png",
+        alt: "Prévia Smart Links",
+    });
+}
+if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding) {
     __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
         ...{ class: "workspace" },
         ...{ class: ({ 'workspace-single': __VLS_ctx.sidebarMode === 'none' }) },
@@ -1520,7 +1654,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
             /** @type {__VLS_StyleScopedClasses['sidebar-nav']} */ ;
             __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                 ...{ onClick: (...[$event]) => {
-                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                             return;
                         if (!(__VLS_ctx.sidebarMode !== 'none'))
                             return;
@@ -1528,7 +1662,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                             return;
                         __VLS_ctx.openDashboard();
                         // @ts-ignore
-                        [currentView, loading, canShowDashboardWorkspace, sidebarMode, sidebarMode, sidebarMode, openDashboard,];
+                        [currentView, currentView, loading, canShowDashboardWorkspace, canShowDashboardWorkspace, showOnboarding, showOnboarding, startOnboarding, sidebarMode, sidebarMode, sidebarMode, openDashboard,];
                     } },
                 type: "button",
                 ...{ class: "sidebar-item" },
@@ -1538,7 +1672,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
             /** @type {__VLS_StyleScopedClasses['active']} */ ;
             __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                 ...{ onClick: (...[$event]) => {
-                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                             return;
                         if (!(__VLS_ctx.sidebarMode !== 'none'))
                             return;
@@ -1556,7 +1690,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
             /** @type {__VLS_StyleScopedClasses['active']} */ ;
             __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                 ...{ onClick: (...[$event]) => {
-                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                             return;
                         if (!(__VLS_ctx.sidebarMode !== 'none'))
                             return;
@@ -1575,7 +1709,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
             /** @type {__VLS_StyleScopedClasses['active']} */ ;
             __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                 ...{ onClick: (...[$event]) => {
-                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                             return;
                         if (!(__VLS_ctx.sidebarMode !== 'none'))
                             return;
@@ -1593,7 +1727,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
             /** @type {__VLS_StyleScopedClasses['active']} */ ;
             __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                 ...{ onClick: (...[$event]) => {
-                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                             return;
                         if (!(__VLS_ctx.sidebarMode !== 'none'))
                             return;
@@ -1617,7 +1751,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
             /** @type {__VLS_StyleScopedClasses['sidebar-nav']} */ ;
             __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                 ...{ onClick: (...[$event]) => {
-                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                             return;
                         if (!(__VLS_ctx.sidebarMode !== 'none'))
                             return;
@@ -1635,7 +1769,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
             /** @type {__VLS_StyleScopedClasses['active']} */ ;
             __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                 ...{ onClick: (...[$event]) => {
-                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                             return;
                         if (!(__VLS_ctx.sidebarMode !== 'none'))
                             return;
@@ -1654,7 +1788,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
             /** @type {__VLS_StyleScopedClasses['active']} */ ;
             __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                 ...{ onClick: (...[$event]) => {
-                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                             return;
                         if (!(__VLS_ctx.sidebarMode !== 'none'))
                             return;
@@ -1673,7 +1807,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
             /** @type {__VLS_StyleScopedClasses['active']} */ ;
             __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                 ...{ onClick: (...[$event]) => {
-                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                             return;
                         if (!(__VLS_ctx.sidebarMode !== 'none'))
                             return;
@@ -1692,7 +1826,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
             /** @type {__VLS_StyleScopedClasses['active']} */ ;
             __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                 ...{ onClick: (...[$event]) => {
-                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                             return;
                         if (!(__VLS_ctx.sidebarMode !== 'none'))
                             return;
@@ -1710,7 +1844,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
             /** @type {__VLS_StyleScopedClasses['active']} */ ;
             __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                 ...{ onClick: (...[$event]) => {
-                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                             return;
                         if (!(__VLS_ctx.sidebarMode !== 'none'))
                             return;
@@ -1837,15 +1971,30 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                 ...{ class: "product-form" },
             });
             /** @type {__VLS_StyleScopedClasses['product-form']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                ...{ class: "form-field" },
+            });
+            /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
             __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
                 required: true,
                 placeholder: "Nome do produto",
             });
             (__VLS_ctx.productForm.name);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                ...{ class: "form-field" },
+            });
+            /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
             __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
                 placeholder: "slug-do-produto",
             });
             (__VLS_ctx.productForm.slug);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                ...{ class: "form-field" },
+            });
+            /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
             __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
                 required: true,
                 type: "number",
@@ -1884,7 +2033,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                     });
                     __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                         ...{ onClick: (...[$event]) => {
-                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                                     return;
                                 if (!(__VLS_ctx.user &&
                                     !__VLS_ctx.needsModuleChoice))
@@ -1908,18 +2057,38 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                     [];
                 }
             }
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                ...{ class: "form-field" },
+            });
+            /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
             __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
                 placeholder: "URL da imagem",
             });
             (__VLS_ctx.productForm.image);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                ...{ class: "form-field" },
+            });
+            /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
             __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
                 placeholder: "Cores: Preto, Branco",
             });
             (__VLS_ctx.productForm.colorValues);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                ...{ class: "form-field" },
+            });
+            /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
             __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
                 placeholder: "Tamanhos: P, M, G",
             });
             (__VLS_ctx.productForm.sizeValues);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                ...{ class: "form-field" },
+            });
+            /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
             __VLS_asFunctionalElement1(__VLS_intrinsics.textarea)({
                 value: (__VLS_ctx.productForm.description),
                 placeholder: "Descricao",
@@ -1930,6 +2099,15 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                 disabled: (__VLS_ctx.loading),
             });
             /** @type {__VLS_StyleScopedClasses['primary-button']} */ ;
+            (__VLS_ctx.editingProductId ? 'Salvar alterações' : 'Criar produto');
+            if (__VLS_ctx.editingProductId) {
+                __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                    ...{ onClick: (__VLS_ctx.resetProductForm) },
+                    ...{ class: "ghost-button" },
+                    type: "button",
+                });
+                /** @type {__VLS_StyleScopedClasses['ghost-button']} */ ;
+            }
         }
         if (__VLS_ctx.dashboardTab === 'products' && __VLS_ctx.showPagesContent) {
             __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
@@ -1965,7 +2143,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                 /** @type {__VLS_StyleScopedClasses['product-action-link']} */ ;
                 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                     ...{ onClick: (...[$event]) => {
-                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                                 return;
                             if (!(__VLS_ctx.user &&
                                 !__VLS_ctx.needsModuleChoice))
@@ -1974,7 +2152,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                                 return;
                             __VLS_ctx.copyProductLink(product.slug);
                             // @ts-ignore
-                            [loading, dashboardTab, showPagesContent, products, productForm, productForm, productForm, productForm, formatCurrency, copyProductLink,];
+                            [loading, dashboardTab, showPagesContent, products, productForm, productForm, productForm, productForm, editingProductId, editingProductId, resetProductForm, formatCurrency, copyProductLink,];
                         } },
                     type: "button",
                     ...{ class: "ghost-button" },
@@ -1982,7 +2160,24 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                 /** @type {__VLS_StyleScopedClasses['ghost-button']} */ ;
                 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                     ...{ onClick: (...[$event]) => {
-                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
+                                return;
+                            if (!(__VLS_ctx.user &&
+                                !__VLS_ctx.needsModuleChoice))
+                                return;
+                            if (!(__VLS_ctx.dashboardTab === 'products' && __VLS_ctx.showPagesContent))
+                                return;
+                            __VLS_ctx.editProduct(product);
+                            // @ts-ignore
+                            [editProduct,];
+                        } },
+                    type: "button",
+                    ...{ class: "ghost-button" },
+                });
+                /** @type {__VLS_StyleScopedClasses['ghost-button']} */ ;
+                __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                    ...{ onClick: (...[$event]) => {
+                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                                 return;
                             if (!(__VLS_ctx.user &&
                                 !__VLS_ctx.needsModuleChoice))
@@ -2002,7 +2197,31 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                         ...{ class: "related-products-panel" },
                     });
                     /** @type {__VLS_StyleScopedClasses['related-products-panel']} */ ;
-                    __VLS_asFunctionalElement1(__VLS_intrinsics.h4, __VLS_intrinsics.h4)({});
+                    __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                        ...{ class: "panel-header" },
+                    });
+                    /** @type {__VLS_StyleScopedClasses['panel-header']} */ ;
+                    __VLS_asFunctionalElement1(__VLS_intrinsics.h3, __VLS_intrinsics.h3)({});
+                    __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
+                        ...{ onClick: (...[$event]) => {
+                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
+                                    return;
+                                if (!(__VLS_ctx.user &&
+                                    !__VLS_ctx.needsModuleChoice))
+                                    return;
+                                if (!(__VLS_ctx.dashboardTab === 'products' && __VLS_ctx.showPagesContent))
+                                    return;
+                                if (!(__VLS_ctx.selectedProductId === product.id))
+                                    return;
+                                __VLS_ctx.selectedProductId = '';
+                                __VLS_ctx.relatedSelection = [];
+                                // @ts-ignore
+                                [selectedProductId, selectedProductId, relatedSelection,];
+                            } },
+                        type: "button",
+                        ...{ class: "ghost-button" },
+                    });
+                    /** @type {__VLS_StyleScopedClasses['ghost-button']} */ ;
                     __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({});
                     for (const [candidate] of __VLS_vFor((__VLS_ctx.products))) {
                         __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
@@ -2011,7 +2230,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                         if (candidate.id !== product.id) {
                             __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
                                 ...{ onClick: (...[$event]) => {
-                                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                                        if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                                             return;
                                         if (!(__VLS_ctx.user &&
                                             !__VLS_ctx.needsModuleChoice))
@@ -2022,9 +2241,10 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                                             return;
                                         if (!(candidate.id !== product.id))
                                             return;
-                                        __VLS_ctx.toggleRelatedProduct(candidate.id);
+                                        __VLS_ctx.selectedProductId = '';
+                                        __VLS_ctx.relatedSelection = [];
                                         // @ts-ignore
-                                        [products, selectedProductId, toggleRelatedProduct,];
+                                        [products, selectedProductId, relatedSelection,];
                                     } },
                                 ...{ class: "related-option" },
                                 ...{ class: ({
@@ -2147,11 +2367,21 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                 ...{ class: "product-form" },
             });
             /** @type {__VLS_StyleScopedClasses['product-form']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                ...{ class: "form-field" },
+            });
+            /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
             __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
                 required: true,
                 placeholder: "Nome do serviço",
             });
             (__VLS_ctx.serviceForm.name);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                ...{ class: "form-field" },
+            });
+            /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
             __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
                 required: true,
                 type: "number",
@@ -2159,6 +2389,11 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                 placeholder: "Duração em minutos",
             });
             (__VLS_ctx.serviceForm.duration);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                ...{ class: "form-field" },
+            });
+            /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
             __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
                 required: true,
                 type: "number",
@@ -2203,7 +2438,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                 });
                 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                     ...{ onClick: (...[$event]) => {
-                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                                 return;
                             if (!(__VLS_ctx.user &&
                                 !__VLS_ctx.needsModuleChoice))
@@ -2221,6 +2456,11 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                 });
                 /** @type {__VLS_StyleScopedClasses['product-image-remove']} */ ;
             }
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                ...{ class: "form-field" },
+            });
+            /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
             __VLS_asFunctionalElement1(__VLS_intrinsics.textarea)({
                 value: (__VLS_ctx.serviceForm.description),
                 placeholder: "Descrição",
@@ -2279,7 +2519,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                 /** @type {__VLS_StyleScopedClasses['product-actions']} */ ;
                 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                     ...{ onClick: (...[$event]) => {
-                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                                 return;
                             if (!(__VLS_ctx.user &&
                                 !__VLS_ctx.needsModuleChoice))
@@ -2296,7 +2536,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                 /** @type {__VLS_StyleScopedClasses['ghost-button']} */ ;
                 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                     ...{ onClick: (...[$event]) => {
-                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                                 return;
                             if (!(__VLS_ctx.user &&
                                 !__VLS_ctx.needsModuleChoice))
@@ -2331,6 +2571,11 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                 ...{ class: "availability-form" },
             });
             /** @type {__VLS_StyleScopedClasses['availability-form']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                ...{ class: "form-field" },
+            });
+            /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
             __VLS_asFunctionalElement1(__VLS_intrinsics.select, __VLS_intrinsics.select)({
                 value: (__VLS_ctx.availabilityForm.weekday),
             });
@@ -2408,7 +2653,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                 /** @type {__VLS_StyleScopedClasses['product-actions']} */ ;
                 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                     ...{ onClick: (...[$event]) => {
-                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                                 return;
                             if (!(__VLS_ctx.user &&
                                 !__VLS_ctx.needsModuleChoice))
@@ -2425,7 +2670,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                 /** @type {__VLS_StyleScopedClasses['ghost-button']} */ ;
                 __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                     ...{ onClick: (...[$event]) => {
-                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                                 return;
                             if (!(__VLS_ctx.user &&
                                 !__VLS_ctx.needsModuleChoice))
@@ -2486,7 +2731,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                 if (!['CONFIRMED', 'COMPLETED', 'CANCELED'].includes(appointment.status)) {
                     __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                         ...{ onClick: (...[$event]) => {
-                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                                     return;
                                 if (!(__VLS_ctx.user &&
                                     !__VLS_ctx.needsModuleChoice))
@@ -2505,7 +2750,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                 if (!['COMPLETED', 'CANCELED'].includes(appointment.status)) {
                     __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                         ...{ onClick: (...[$event]) => {
-                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                                     return;
                                 if (!(__VLS_ctx.user &&
                                     !__VLS_ctx.needsModuleChoice))
@@ -2524,7 +2769,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                 if (!['COMPLETED', 'CANCELED'].includes(appointment.status)) {
                     __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                         ...{ onClick: (...[$event]) => {
-                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                                     return;
                                 if (!(__VLS_ctx.user &&
                                     !__VLS_ctx.needsModuleChoice))
@@ -2580,7 +2825,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                 if (!['CONFIRMED', 'COMPLETED', 'CANCELED'].includes(appointment.status)) {
                     __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                         ...{ onClick: (...[$event]) => {
-                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                                     return;
                                 if (!(__VLS_ctx.user &&
                                     !__VLS_ctx.needsModuleChoice))
@@ -2599,7 +2844,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                 if (!['COMPLETED', 'CANCELED'].includes(appointment.status)) {
                     __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                         ...{ onClick: (...[$event]) => {
-                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                                     return;
                                 if (!(__VLS_ctx.user &&
                                     !__VLS_ctx.needsModuleChoice))
@@ -2618,7 +2863,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                 if (!['COMPLETED', 'CANCELED'].includes(appointment.status)) {
                     __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                         ...{ onClick: (...[$event]) => {
-                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                                     return;
                                 if (!(__VLS_ctx.user &&
                                     !__VLS_ctx.needsModuleChoice))
@@ -2699,14 +2944,29 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                 ...{ class: "settings-divider" },
             });
             /** @type {__VLS_StyleScopedClasses['settings-divider']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                ...{ class: "form-field" },
+            });
+            /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
             __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
                 placeholder: "Nome da empresa",
             });
             (__VLS_ctx.companyForm.name);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                ...{ class: "form-field" },
+            });
+            /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
             __VLS_asFunctionalElement1(__VLS_intrinsics.textarea)({
                 value: (__VLS_ctx.companyForm.description),
                 placeholder: "Descrição",
             });
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                ...{ class: "form-field" },
+            });
+            /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
             __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
                 placeholder: "Instagram",
             });
@@ -2720,14 +2980,29 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
             });
             /** @type {__VLS_StyleScopedClasses['settings-section']} */ ;
             __VLS_asFunctionalElement1(__VLS_intrinsics.h3, __VLS_intrinsics.h3)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                ...{ class: "form-field" },
+            });
+            /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
             __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
                 placeholder: "Telefone",
             });
             (__VLS_ctx.companyForm.telefone);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                ...{ class: "form-field" },
+            });
+            /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
             __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
                 placeholder: "WhatsApp",
             });
             (__VLS_ctx.companyForm.numeroWhatsApp);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                ...{ class: "form-field" },
+            });
+            /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
             __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
                 placeholder: "Endereço",
             });
@@ -2762,10 +3037,20 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                 accept: ".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp",
                 disabled: (__VLS_ctx.uploadingLogo),
             });
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                ...{ class: "form-field" },
+            });
+            /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
             __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
                 placeholder: "URL do Banner",
             });
             (__VLS_ctx.companyForm.heroImage);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                ...{ class: "form-field" },
+            });
+            /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
             __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
                 placeholder: "URL da Logo",
             });
@@ -2915,7 +3200,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                     });
                     __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                         ...{ onClick: (...[$event]) => {
-                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                                     return;
                                 if (!(__VLS_ctx.user &&
                                     !__VLS_ctx.needsModuleChoice))
@@ -2942,7 +3227,7 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                     });
                     __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
                         ...{ onClick: (...[$event]) => {
-                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
+                                if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace && !__VLS_ctx.showOnboarding))
                                     return;
                                 if (!(__VLS_ctx.user &&
                                     !__VLS_ctx.needsModuleChoice))
@@ -2978,93 +3263,15 @@ if (__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace
                 ...{ class: "settings-page" },
             });
             /** @type {__VLS_StyleScopedClasses['settings-page']} */ ;
-            __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
-            if (__VLS_ctx.isSubscriptionActive && __VLS_ctx.selectedModule) {
-                __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-                    ...{ class: "settings-module-switch" },
-                });
-                /** @type {__VLS_StyleScopedClasses['settings-module-switch']} */ ;
-                __VLS_asFunctionalElement1(__VLS_intrinsics.h3, __VLS_intrinsics.h3)({});
-                __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
-                    ...{ class: "muted" },
-                });
-                /** @type {__VLS_StyleScopedClasses['muted']} */ ;
-                __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
-                    ...{ class: "choose-module-grid settings-module-grid" },
-                });
-                /** @type {__VLS_StyleScopedClasses['choose-module-grid']} */ ;
-                /** @type {__VLS_StyleScopedClasses['settings-module-grid']} */ ;
-                __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
-                    ...{ class: "choose-module-card" },
-                    ...{ class: ({ selected: __VLS_ctx.selectedModule === 'PAGES' }) },
-                });
-                /** @type {__VLS_StyleScopedClasses['choose-module-card']} */ ;
-                /** @type {__VLS_StyleScopedClasses['selected']} */ ;
-                __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
-                    ...{ class: "eyebrow" },
-                });
-                /** @type {__VLS_StyleScopedClasses['eyebrow']} */ ;
-                __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
-                __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-                    ...{ onClick: (...[$event]) => {
-                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
-                                return;
-                            if (!(__VLS_ctx.user &&
-                                !__VLS_ctx.needsModuleChoice))
-                                return;
-                            if (!(__VLS_ctx.dashboardTab === 'settings'))
-                                return;
-                            if (!(__VLS_ctx.isSubscriptionActive && __VLS_ctx.selectedModule))
-                                return;
-                            __VLS_ctx.switchModule('PAGES');
-                            // @ts-ignore
-                            [isSubscriptionActive, dashboardTab, selectedModule, selectedModule, subscriptionPayment, subscriptionPayment, switchModule,];
-                        } },
-                    ...{ class: "primary-button" },
-                    type: "button",
-                    disabled: (__VLS_ctx.loading || __VLS_ctx.selectedModule === 'PAGES'),
-                });
-                /** @type {__VLS_StyleScopedClasses['primary-button']} */ ;
-                (__VLS_ctx.selectedModule === 'PAGES' ? 'Módulo atual' : 'Usar Smart Pages');
-                __VLS_asFunctionalElement1(__VLS_intrinsics.article, __VLS_intrinsics.article)({
-                    ...{ class: "choose-module-card" },
-                    ...{ class: ({ selected: __VLS_ctx.selectedModule === 'AGENDS' }) },
-                });
-                /** @type {__VLS_StyleScopedClasses['choose-module-card']} */ ;
-                /** @type {__VLS_StyleScopedClasses['selected']} */ ;
-                __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
-                    ...{ class: "eyebrow" },
-                });
-                /** @type {__VLS_StyleScopedClasses['eyebrow']} */ ;
-                __VLS_asFunctionalElement1(__VLS_intrinsics.h2, __VLS_intrinsics.h2)({});
-                __VLS_asFunctionalElement1(__VLS_intrinsics.button, __VLS_intrinsics.button)({
-                    ...{ onClick: (...[$event]) => {
-                            if (!(__VLS_ctx.currentView === 'dashboard' && __VLS_ctx.canShowDashboardWorkspace))
-                                return;
-                            if (!(__VLS_ctx.user &&
-                                !__VLS_ctx.needsModuleChoice))
-                                return;
-                            if (!(__VLS_ctx.dashboardTab === 'settings'))
-                                return;
-                            if (!(__VLS_ctx.isSubscriptionActive && __VLS_ctx.selectedModule))
-                                return;
-                            __VLS_ctx.switchModule('AGENDS');
-                            // @ts-ignore
-                            [loading, selectedModule, selectedModule, selectedModule, switchModule,];
-                        } },
-                    ...{ class: "primary-button" },
-                    type: "button",
-                    disabled: (__VLS_ctx.loading || __VLS_ctx.selectedModule === 'AGENDS'),
-                });
-                /** @type {__VLS_StyleScopedClasses['primary-button']} */ ;
-                (__VLS_ctx.selectedModule === 'AGENDS' ? 'Módulo atual' : 'Usar Smart Agends');
-            }
-            else {
-                __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
-                    ...{ class: "muted" },
-                });
-                /** @type {__VLS_StyleScopedClasses['muted']} */ ;
-            }
+            __VLS_asFunctionalElement1(__VLS_intrinsics.div, __VLS_intrinsics.div)({
+                ...{ class: "empty-state" },
+            });
+            /** @type {__VLS_StyleScopedClasses['empty-state']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.h3, __VLS_intrinsics.h3)({});
+            __VLS_asFunctionalElement1(__VLS_intrinsics.p, __VLS_intrinsics.p)({
+                ...{ class: "muted" },
+            });
+            /** @type {__VLS_StyleScopedClasses['muted']} */ ;
         }
     }
 }
@@ -3184,7 +3391,7 @@ if (__VLS_ctx.currentView === 'company' && __VLS_ctx.company) {
         });
         /** @type {__VLS_StyleScopedClasses['public-card-link']} */ ;
         // @ts-ignore
-        [currentView, loading, selectedModule, selectedModule, formatCurrency, company, company, company, company, company, company, company, company, company, company, company, company, productSearch, filteredProducts,];
+        [currentView, dashboardTab, formatCurrency, subscriptionPayment, subscriptionPayment, company, company, company, company, company, company, company, company, company, company, company, company, productSearch, filteredProducts,];
     }
     if (__VLS_ctx.company.services?.length) {
         __VLS_asFunctionalElement1(__VLS_intrinsics.section, __VLS_intrinsics.section)({
@@ -3243,6 +3450,7 @@ if (__VLS_ctx.currentView === 'company' && __VLS_ctx.company) {
         if (__VLS_ctx.selectedPublicService) {
             __VLS_asFunctionalElement1(__VLS_intrinsics.form, __VLS_intrinsics.form)({
                 ...{ onSubmit: (__VLS_ctx.createPublicAppointment) },
+                ref: "appointmentFormRef",
                 ...{ class: "public-appointment-form" },
             });
             /** @type {__VLS_StyleScopedClasses['public-appointment-form']} */ ;
@@ -3292,11 +3500,21 @@ if (__VLS_ctx.currentView === 'company' && __VLS_ctx.company) {
                 // @ts-ignore
                 [appointmentForm, appointmentForm, toLocalDateKey, availableAppointmentTimes, availableAppointmentTimes,];
             }
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                ...{ class: "form-field" },
+            });
+            /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
             __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
                 required: true,
                 placeholder: "Seu nome",
             });
             (__VLS_ctx.appointmentForm.customerName);
+            __VLS_asFunctionalElement1(__VLS_intrinsics.label, __VLS_intrinsics.label)({
+                ...{ class: "form-field" },
+            });
+            /** @type {__VLS_StyleScopedClasses['form-field']} */ ;
+            __VLS_asFunctionalElement1(__VLS_intrinsics.span, __VLS_intrinsics.span)({});
             __VLS_asFunctionalElement1(__VLS_intrinsics.input)({
                 required: true,
                 placeholder: "Seu WhatsApp",
