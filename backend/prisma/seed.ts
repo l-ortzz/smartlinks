@@ -1,33 +1,30 @@
+import "dotenv/config";
 import { prisma } from "../src/lib/prisma.ts";
 
 async function main() {
-  const exists = await prisma.plan.findFirst({
+  const plan = await prisma.plan.upsert({
     where: {
       name: "Smart Links",
     },
+    update: {},
+    create: {
+      name: "Smart Links",
+      price: "97.00",
+      features: {
+        pages: true,
+        agends: true,
+      },
+    },
   });
 
-  if (exists) {
-    console.log("Plano Smart Links já existe.");
-    return;
-  }
-
-await prisma.plan.create({
-  data: {
-    name: "Smart Links",
-    price: "97.00",
-    features: {
-      pages: true,
-      agends: true,
-    },
-  },
-});
-
-  console.log("Plano Smart Links criado com sucesso!");
+  console.log(`Plano ${plan.name} garantido com sucesso!`);
 }
 
 main()
-  .catch(console.error)
+  .catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  })
   .finally(async () => {
     await prisma.$disconnect();
   });

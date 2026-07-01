@@ -57,15 +57,20 @@ export async function createInitialSubscription(input: {
   userId: string;
   asaasCustomerId: string;
 }) {
-  const plan = await prisma.plan.findFirst({
+  const plan = await prisma.plan.upsert({
     where: {
       name: "Smart Links",
     },
+    update: {},
+    create: {
+      name: "Smart Links",
+      price: "97.00",
+      features: {
+        pages: true,
+        agends: true,
+      },
+    },
   });
-
-  if (!plan) {
-    throw new Error("Default plan not found.");
-  }
 
   return prisma.subscription.create({
     data: {
