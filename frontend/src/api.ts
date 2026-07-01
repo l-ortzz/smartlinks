@@ -1,4 +1,6 @@
-const API_URL = import.meta.env.VITE_API_URL ?? "http://127.0.0.1:3333";
+const API_URL =
+  import.meta.env.VITE_API_URL ??
+  (import.meta.env.DEV ? "http://127.0.0.1:3333" : "/api");
 const TOKEN_KEY = "smartlinks.token";
 
 export type SessionUser = {
@@ -205,6 +207,9 @@ export function clearToken() {
 async function request<T>(path: string, options: RequestInit = {}) {
   const headers = new Headers(options.headers);
   const isFormData = options.body instanceof FormData;
+  const isAuthRequest =
+    path === "/auth/login" ||
+    path === "/auth/register";
 
   if (!headers.has("Content-Type") && options.body && !isFormData) {
     headers.set("Content-Type", "application/json");
@@ -212,22 +217,42 @@ async function request<T>(path: string, options: RequestInit = {}) {
 
   const token = getToken();
 
-  if (token) {
+  if (token && !isAuthRequest) {
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const response = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers,
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      headers,
+    });
+  } catch {
+    throw new Error(
+      "Não foi possível conectar ao servidor. Tente novamente.",
+    );
+  }
 
   if (!response.ok) {
     const error = await response
       .json()
-      .catch(() => ({ message: "Request failed." }));
+      .catch(() => ({ message: "Não foi possível concluir a solicitação." }));
+    const messageByBackendError: Record<string, string> = {
+      "Invalid credentials.": "Credenciais inválidas.",
+      "Email already registered.": "Este email já está cadastrado.",
+    };
+    const backendMessage =
+      typeof error.message === "string"
+        ? error.message
+        : "Não foi possível concluir a solicitação.";
+
+    if (response.status === 401 && !isAuthRequest) {
+      clearToken();
+    }
 
     const requestError = new Error(
-      error.message ?? "Request failed.",
+      messageByBackendError[backendMessage] ?? backendMessage,
     ) as Error & {
       status?: number;
       code?: string;
