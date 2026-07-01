@@ -2539,3 +2539,299 @@ html{
   justify-content: center;
   overflow: hidden;
 }
+
+@media (max-width: 600px) {
+  .topbar {
+    align-items: center;
+    flex-direction: row;
+    gap: 8px;
+    min-height: 56px;
+    padding: 8px 12px;
+  }
+
+  .topbar .brand > span:last-child {
+    display: none;
+  }
+
+  .nav-links {
+    font-size: 13px;
+    gap: 12px;
+    min-width: 0;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+
+  .workspace {
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .dashboard-sidebar {
+    min-height: 0;
+    overflow-x: auto;
+    padding: 6px;
+    scrollbar-width: none;
+  }
+
+  .dashboard-sidebar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .sidebar-brand,
+  .sidebar-footer,
+  .sidebar-section-title {
+    display: none;
+  }
+
+  .sidebar-nav {
+    flex-direction: row;
+    gap: 4px;
+    width: max-content;
+  }
+
+  .sidebar-item {
+    min-height: 42px;
+    padding: 10px 12px;
+    white-space: nowrap;
+  }
+
+  .main-panel {
+    padding: 16px;
+  }
+
+  .dashboard-header {
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .dashboard-title {
+    font-size: 26px;
+  }
+
+  .dashboard-counter {
+    padding: 8px 10px;
+  }
+
+  .landing-page {
+    padding: 0 16px;
+  }
+
+  .landing-navbar {
+    margin-bottom: 0;
+    padding: 14px 0;
+  }
+
+  .landing-navbar .primary-button {
+    min-height: 40px;
+    padding: 0 12px;
+  }
+
+  .landing-hero {
+    gap: 32px;
+    min-height: auto;
+    padding: 48px 0 64px;
+  }
+
+  .landing-title {
+    font-size: 2.25rem;
+    margin-bottom: 18px;
+  }
+
+  .landing-subtitle {
+    font-size: 1rem;
+    line-height: 1.6;
+    margin-bottom: 24px;
+  }
+
+  .landing-actions {
+    display: grid;
+    gap: 10px;
+  }
+
+  .landing-actions .primary-button,
+  .landing-actions .ghost-button {
+    width: 100%;
+  }
+
+  .hero-image,
+  .benefits-image,
+  .steps-image,
+  .module-item img {
+    width: calc(100% + 16px);
+    max-width: none;
+  }
+
+  .hero-image,
+  .benefits-image,
+  .steps-image {
+    margin-left: -8px;
+  }
+
+  .hero-image img,
+  .module-item img {
+    border-radius: 12px;
+  }
+
+  .landing-benefits,
+  .landing-steps,
+  .landing-modules,
+  .landing-faq,
+  .landing-cta {
+    margin: 72px auto;
+  }
+
+  .landing-steps,
+  .landing-modules,
+  .landing-cta {
+    padding: 0;
+  }
+
+  .section-header,
+  .landing-steps .section-header {
+    margin-bottom: 28px;
+  }
+
+  .section-title,
+  .landing-steps .section-title,
+  .module-info .section-title {
+    font-size: 2rem;
+  }
+
+  .module-item,
+  .module-item:nth-child(even) {
+    gap: 24px;
+    grid-template-columns: 1fr;
+    margin-bottom: 72px;
+  }
+
+  .module-item:nth-child(even) .module-info,
+  .module-item:nth-child(even) img {
+    order: unset;
+  }
+
+  .module-info p {
+    font-size: 1rem;
+    line-height: 1.65;
+    margin-bottom: 24px;
+  }
+
+  .module-item img {
+    margin-left: -8px;
+  }
+
+  .faq-item {
+    padding: 18px;
+  }
+
+  .cta-box {
+    border-radius: 16px;
+    padding: 44px 20px;
+  }
+
+  .cta-box h2 {
+    font-size: 2rem;
+  }
+
+  .landing-footer {
+    margin-top: 72px;
+    padding: 40px 0;
+  }
+
+  .footer-links {
+    gap: 28px;
+    margin: 36px 0;
+  }
+
+  .public-page {
+    padding: 16px 12px 32px;
+  }
+
+  .company-banner {
+    border-radius: 8px;
+    height: 132px;
+  }
+
+  .company-banner:empty {
+    height: 24px;
+  }
+
+  .company-banner:empty + .company-hero-content {
+    margin-top: 12px;
+  }
+
+  .company-hero {
+    margin-bottom: 24px;
+  }
+
+  .company-hero-content {
+    margin-top: -40px;
+  }
+
+  .company-logo-large {
+    border-radius: 8px;
+    height: 84px;
+    margin-bottom: 12px;
+    width: 84px;
+  }
+
+  .company-hero-content h1 {
+    font-size: 28px;
+    margin-bottom: 10px;
+  }
+
+  .company-description {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .company-info-cards {
+    gap: 8px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin: 24px 0;
+  }
+
+  .info-card {
+    border-radius: 8px;
+    padding: 12px 6px;
+  }
+
+  .info-card strong {
+    font-size: 12px;
+  }
+
+  .info-card span {
+    font-size: 11px;
+  }
+
+  .catalog-header {
+    margin-bottom: 16px;
+  }
+
+  .product-search {
+    border-radius: 8px;
+    min-height: 46px;
+  }
+
+  .public-grid {
+    gap: 10px;
+  }
+
+  .public-card {
+    border-radius: 8px;
+  }
+
+  .public-card strong {
+    font-size: 14px;
+    padding: 10px 10px 4px;
+  }
+
+  .public-card span {
+    font-size: 14px;
+    padding: 0 10px 10px;
+  }
+
+  .public-card .public-card-link {
+    font-size: 12px;
+    padding: 0 10px 12px;
+  }
+}
